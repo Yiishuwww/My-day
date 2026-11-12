@@ -33,6 +33,9 @@ jobs:
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5
+        with:
+          # 首次运行时自动开启 GitHub Pages（公开仓库、免费账号可用）
+          enablement: true
 
       - name: Build
         env:
