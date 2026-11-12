@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
   CalendarPlus,
   ChevronDown,
   CircleCheck,
+  Moon,
   Sparkles,
   SunMedium,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ import {
   sortTasks,
   todayKey,
 } from '../lib/dates'
+import { setTheme } from '../lib/theme'
 import { cx } from '../lib/utils'
 
 interface Props {
@@ -35,6 +37,24 @@ export function TodayView({
 }: Props) {
   const today = todayKey()
   const [showDone, setShowDone] = useState(false)
+  const [isDark, setIsDark] = useState(
+    () => document.documentElement.getAttribute('data-theme') === 'dark',
+  )
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const syncTheme = (): void => {
+      setIsDark(document.documentElement.getAttribute('data-theme') === 'dark')
+    }
+    media.addEventListener('change', syncTheme)
+    return () => media.removeEventListener('change', syncTheme)
+  }, [])
+
+  const toggleTheme = (): void => {
+    const next = isDark ? 'light' : 'dark'
+    setTheme(next)
+    setIsDark(next === 'dark')
+  }
 
   const overdue = useMemo(
     () =>
@@ -84,13 +104,15 @@ export function TodayView({
             <p className="hero-date">{humanDateWithWeekday(today)}</p>
             <h1>{greeting()}</h1>
           </div>
-          <div className="hero-icon">
-            {allDone && overdue.length === 0 ? (
-              <Sparkles size={20} />
-            ) : (
-              <SunMedium size={20} />
-            )}
-          </div>
+          <button
+            type="button"
+            className="hero-icon theme-toggle"
+            onClick={toggleTheme}
+            aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
+            title={isDark ? '切换到浅色模式' : '切换到深色模式'}
+          >
+            {isDark ? <SunMedium size={20} /> : <Moon size={20} />}
+          </button>
         </div>
         <div className="hero-progress">
           <div
@@ -103,7 +125,12 @@ export function TodayView({
           >
             <span style={{ width: `${progress}%` }} />
           </div>
-          <p className="hero-progress-text">{progressText}</p>
+          <p className="hero-progress-text">
+            {allDone && overdue.length === 0 && (
+              <Sparkles size={12} className="progress-sparkle" aria-hidden="true" />
+            )}
+            {progressText}
+          </p>
         </div>
       </header>
 

@@ -379,6 +379,17 @@ p {
   place-items: center;
   box-shadow: var(--shadow-sm);
   flex: 0 0 auto;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+
+.theme-toggle:active {
+  transform: scale(0.9);
+}
+
+@media (hover: hover) {
+  .theme-toggle:hover {
+    background: var(--accent-soft);
+  }
 }
 
 .hero-progress {
@@ -403,10 +414,18 @@ p {
 }
 
 .hero-progress-text {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-top: 9px;
   font-size: 12px;
   font-weight: 500;
   color: var(--text-2);
+}
+
+.progress-sparkle {
+  color: var(--accent);
+  flex: 0 0 auto;
 }
 
 /* ---------- Sections ---------- */

@@ -86,6 +86,20 @@ try {
   await shot('01-today-empty')
   log('Today view renders empty state')
 
+  // Hero theme toggle
+  const themeToggle = page.locator('.theme-toggle')
+  await themeToggle.click()
+  const darkAfterToggle = await page.locator('html').getAttribute('data-theme')
+  if (darkAfterToggle !== 'dark') {
+    throw new Error(`Theme toggle did not switch to dark: ${darkAfterToggle}`)
+  }
+  await themeToggle.click()
+  const lightAfterToggle = await page.locator('html').getAttribute('data-theme')
+  if (lightAfterToggle !== 'light') {
+    throw new Error(`Theme toggle did not switch to light: ${lightAfterToggle}`)
+  }
+  log('Hero theme toggle switches light/dark')
+
   // Parser coverage
   const parserCases = [
     { title: '周五交报告', includes: ['交报告'] },
