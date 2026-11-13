@@ -9,11 +9,22 @@ import { cx } from '../lib/utils'
 interface Props {
   tasks: Task[]
   onToggle: (task: Task) => void
+  onToggleSubtask: (task: Task, subtaskId: string) => void
   onEdit: (task: Task) => void
+  onFocus: (task: Task) => void
+  onTagClick: (tag: string) => void
   onNew: () => void
 }
 
-export function InboxView({ tasks, onToggle, onEdit, onNew }: Props) {
+export function InboxView({
+  tasks,
+  onToggle,
+  onToggleSubtask,
+  onEdit,
+  onFocus,
+  onTagClick,
+  onNew,
+}: Props) {
   const [showDone, setShowDone] = useState(false)
 
   const pending = useMemo(
@@ -53,7 +64,10 @@ export function InboxView({ tasks, onToggle, onEdit, onNew }: Props) {
                 key={task.id}
                 task={task}
                 onToggle={onToggle}
+                onToggleSubtask={onToggleSubtask}
                 onOpen={onEdit}
+                onFocus={onFocus}
+                onTagClick={onTagClick}
               />
             ))}
           </div>
@@ -85,7 +99,10 @@ export function InboxView({ tasks, onToggle, onEdit, onNew }: Props) {
                     key={task.id}
                     task={task}
                     onToggle={onToggle}
+                    onToggleSubtask={onToggleSubtask}
                     onOpen={onEdit}
+                    onFocus={onFocus}
+                    onTagClick={onTagClick}
                   />
                 ))}
               </div>

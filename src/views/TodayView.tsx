@@ -1,4 +1,29 @@
-import { useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react'
+import {
+  DndContext,
+  MouseSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
+import { CSS } from '@dnd-kit/utilities'
 import {
   AlertCircle,
   CalendarPlus,
@@ -14,31 +39,89 @@ import { EmptyState } from '../components/EmptyState'
 import {
   greeting,
   humanDateWithWeekday,
+  sortByPriorityAndOrder,
   sortTasks,
   todayKey,
 } from '../lib/dates'
+import { reorderTasks } from '../db'
 import { setTheme } from '../lib/theme'
 import { cx } from '../lib/utils'
 
 interface Props {
   tasks: Task[]
   onToggle: (task: Task) => void
+  onToggleSubtask: (task: Task, subtaskId: string) => void
   onEdit: (task: Task) => void
   onNew: () => void
   onMoveAllOverdue: (ids: string[]) => void
+  onFocus: (task: Task) => void
+  onTagClick: (tag: string) => void
+}
+
+function SortableTask(props: ComponentProps<typeof TaskItem>) {
+  const { task } = props
+  const { listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: task.id,
+      data: { priority: task.priority },
+    })
+  const suppressClick = useRef(false)
+
+  useEffect(() => {
+    if (isDragging) {
+      suppressClick.current = true
+      return
+    }
+    if (!suppressClick.current) return
+    const timer = window.setTimeout(() => {
+      suppressClick.current = false
+    }, 220)
+    return () => window.clearTimeout(timer)
+  }, [isDragging])
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      data-task-id={task.id}
+      className={cx('sortable-task', isDragging && 'is-dragging')}
+      onClickCapture={(event) => {
+        if (suppressClick.current) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+      }}
+      {...listeners}
+    >
+      <TaskItem {...props} />
+    </div>
+  )
 }
 
 export function TodayView({
   tasks,
   onToggle,
+  onToggleSubtask,
   onEdit,
   onNew,
   onMoveAllOverdue,
+  onFocus,
+  onTagClick,
 }: Props) {
   const today = todayKey()
   const [showDone, setShowDone] = useState(false)
   const [isDark, setIsDark] = useState(
     () => document.documentElement.getAttribute('data-theme') === 'dark',
+  )
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 350, tolerance: 8 },
+    }),
   )
 
   useEffect(() => {
@@ -60,7 +143,11 @@ export function TodayView({
     () =>
       sortTasks(
         tasks.filter(
-          (task) => !task.completed && task.date && task.date < today,
+          (task) =>
+            !task.completed &&
+            task.date &&
+            task.date < today &&
+            !task.seriesId,
         ),
       ),
     [tasks, today],
@@ -70,7 +157,10 @@ export function TodayView({
     [tasks, today],
   )
   const openToday = useMemo(
-    () => sortTasks(todayTasks.filter((task) => !task.completed)),
+    () =>
+      sortByPriorityAndOrder(
+        todayTasks.filter((task) => !task.completed),
+      ),
     [todayTasks],
   )
   const doneToday = useMemo(
@@ -95,6 +185,41 @@ export function TodayView({
         : overdue.length
           ? `完成 ${done} / ${total} · ${overdue.length} 件顺延`
           : `完成 ${done} / ${total}`
+
+  const collisionDetection: CollisionDetection = useCallback((args) => {
+    const activePriority = (
+      args.active.data.current as { priority?: number } | undefined
+    )?.priority
+    return closestCenter({
+      ...args,
+      droppableContainers: args.droppableContainers.filter((container) => {
+        const priority = (
+          container.data.current as { priority?: number } | undefined
+        )?.priority
+        return priority === activePriority
+      }),
+    })
+  }, [])
+
+  const handleDragEnd = (event: DragEndEvent): void => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const source = openToday.find((task) => task.id === active.id)
+    const target = openToday.find((task) => task.id === over.id)
+    if (!source || !target || source.priority !== target.priority) return
+
+    const group = openToday.filter(
+      (task) => task.priority === source.priority,
+    )
+    const oldIndex = group.findIndex((task) => task.id === active.id)
+    const newIndex = group.findIndex((task) => task.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+
+    const orderedIds = arrayMove(group, oldIndex, newIndex).map(
+      (task) => task.id,
+    )
+    void reorderTasks(orderedIds).catch(() => undefined)
+  }
 
   return (
     <div className="view today-view">
@@ -157,7 +282,10 @@ export function TodayView({
                 task={task}
                 overdue
                 onToggle={onToggle}
+                onToggleSubtask={onToggleSubtask}
                 onOpen={onEdit}
+                onFocus={onFocus}
+                onTagClick={onTagClick}
               />
             ))}
           </div>
@@ -178,16 +306,31 @@ export function TodayView({
         </div>
 
         {openToday.length > 0 ? (
-          <div className="task-list">
-            {openToday.map((task) => (
-              <TaskItem
-                key={task.id}
-                task={task}
-                onToggle={onToggle}
-                onOpen={onEdit}
-              />
-            ))}
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={openToday.map((task) => task.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="task-list">
+                {openToday.map((task) => (
+                  <SortableTask
+                    key={task.id}
+                    task={task}
+                    onToggle={onToggle}
+                    onToggleSubtask={onToggleSubtask}
+                    onOpen={onEdit}
+                    onFocus={onFocus}
+                    onTagClick={onTagClick}
+                  />
+                ))}
+              </div>
+            </SortableContext>
+          </DndContext>
         ) : total > 0 ? (
           <div className="all-done">
             <CircleCheck size={17} />
@@ -221,7 +364,10 @@ export function TodayView({
                     key={task.id}
                     task={task}
                     onToggle={onToggle}
+                    onToggleSubtask={onToggleSubtask}
                     onOpen={onEdit}
+                    onFocus={onFocus}
+                    onTagClick={onTagClick}
                   />
                 ))}
               </div>

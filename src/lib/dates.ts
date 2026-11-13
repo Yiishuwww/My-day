@@ -1,9 +1,11 @@
 import {
   addDays,
+  addMonths,
   differenceInCalendarDays,
   format,
   getDay,
   parseISO,
+  startOfMonth,
   startOfWeek,
 } from 'date-fns'
 import type { Recurrence, Task } from '../types'
@@ -24,6 +26,10 @@ export function todayKey(): string {
 
 export function addDaysKey(key: string, days: number): string {
   return toKey(addDays(fromKey(key), days))
+}
+
+export function addMonthsKey(key: string, months: number): string {
+  return toKey(addMonths(fromKey(key), months))
 }
 
 export function weekdayLabel(key: string): string {
@@ -49,6 +55,14 @@ export function startOfWeekKey(key: string): string {
 
 export function weekKeys(startKey: string): string[] {
   return Array.from({ length: 7 }, (_, index) => addDaysKey(startKey, index))
+}
+
+export function startOfMonthKey(key: string): string {
+  return toKey(startOfMonth(fromKey(key)))
+}
+
+export function daysBetweenKeys(start: string, end: string): number {
+  return differenceInCalendarDays(fromKey(end), fromKey(start))
 }
 
 export function daysUntil(key: string, base = todayKey()): number {
@@ -99,6 +113,20 @@ export function sortTasks(tasks: Task[]): Task[] {
     const bTime = b.time ?? '99:99'
     if (aTime !== bTime) return aTime < bTime ? -1 : 1
     if (a.priority !== b.priority) return b.priority - a.priority
+    return a.createdAt - b.createdAt
+  })
+}
+
+/**
+ * Today order: priority high -> medium -> none, manual order inside each
+ * priority. The visual list stays flat, but drag is restricted by priority.
+ */
+export function sortByPriorityAndOrder(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    if (a.priority !== b.priority) return b.priority - a.priority
+    const aOrder = a.sortOrder ?? a.createdAt
+    const bOrder = b.sortOrder ?? b.createdAt
+    if (aOrder !== bOrder) return aOrder - bOrder
     return a.createdAt - b.createdAt
   })
 }

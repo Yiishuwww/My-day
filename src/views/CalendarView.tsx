@@ -1,14 +1,23 @@
-import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Plus,
+} from 'lucide-react'
 import type { Task } from '../types'
 import { TaskItem } from '../components/TaskItem'
 import { WeekStrip } from '../components/WeekStrip'
+import { MonthGrid } from '../components/MonthGrid'
 import {
   addDaysKey,
+  addMonthsKey,
   humanDateWithWeekday,
   monthLabel,
   relativeDayLabel,
   sortTasks,
+  startOfMonthKey,
   startOfWeekKey,
   todayKey,
 } from '../lib/dates'
@@ -19,21 +28,36 @@ interface Props {
   selectedDate: string
   onSelectDate: (date: string) => void
   onToggle: (task: Task) => void
+  onToggleSubtask: (task: Task, subtaskId: string) => void
   onEdit: (task: Task) => void
+  onFocus: (task: Task) => void
+  onTagClick: (tag: string) => void
   onNew: (date: string) => void
 }
+
+const EXPANDED_KEY = 'myday.calendar.expanded'
 
 export function CalendarView({
   tasks,
   selectedDate,
   onSelectDate,
   onToggle,
+  onToggleSubtask,
   onEdit,
+  onFocus,
+  onTagClick,
   onNew,
 }: Props) {
   const today = todayKey()
   const weekStart = startOfWeekKey(selectedDate)
   const [showDone, setShowDone] = useState(false)
+  const [expanded, setExpanded] = useState(
+    () => localStorage.getItem(EXPANDED_KEY) === '1',
+  )
+
+  useEffect(() => {
+    localStorage.setItem(EXPANDED_KEY, expanded ? '1' : '0')
+  }, [expanded])
 
   const dayTasks = useMemo(
     () => tasks.filter((task) => task.date === selectedDate),
@@ -51,6 +75,14 @@ export function CalendarView({
   const relative = relativeDayLabel(selectedDate)
   const countLabel =
     open.length > 0 ? `${open.length} 待办` : done.length > 0 ? '已完成' : '空闲'
+
+  const navigate = (direction: number): void => {
+    onSelectDate(
+      expanded
+        ? addMonthsKey(selectedDate, direction)
+        : addDaysKey(selectedDate, direction * 7),
+    )
+  }
 
   return (
     <div className="view calendar-view">
@@ -73,8 +105,8 @@ export function CalendarView({
         <button
           type="button"
           className="icon-btn"
-          aria-label="上一周"
-          onClick={() => onSelectDate(addDaysKey(selectedDate, -7))}
+          aria-label={expanded ? '上个月' : '上一周'}
+          onClick={() => navigate(-1)}
         >
           <ChevronLeft size={19} />
         </button>
@@ -82,21 +114,49 @@ export function CalendarView({
         <button
           type="button"
           className="icon-btn"
-          aria-label="下一周"
-          onClick={() => onSelectDate(addDaysKey(selectedDate, 7))}
+          aria-label={expanded ? '下个月' : '下一周'}
+          onClick={() => navigate(1)}
         >
           <ChevronRight size={19} />
         </button>
       </div>
 
-      <WeekStrip
-        weekStart={weekStart}
-        selectedDate={selectedDate}
-        tasks={tasks}
-        onSelect={onSelectDate}
-        onPrevWeek={() => onSelectDate(addDaysKey(selectedDate, -7))}
-        onNextWeek={() => onSelectDate(addDaysKey(selectedDate, 7))}
-      />
+      {expanded ? (
+        <MonthGrid
+          monthKey={startOfMonthKey(selectedDate)}
+          selectedDate={selectedDate}
+          tasks={tasks}
+          onSelect={onSelectDate}
+        />
+      ) : (
+        <WeekStrip
+          weekStart={weekStart}
+          selectedDate={selectedDate}
+          tasks={tasks}
+          onSelect={onSelectDate}
+          onPrevWeek={() => onSelectDate(addDaysKey(selectedDate, -7))}
+          onNextWeek={() => onSelectDate(addDaysKey(selectedDate, 7))}
+        />
+      )}
+
+      <button
+        type="button"
+        className="cal-expand"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        {expanded ? (
+          <>
+            <ChevronUp size={14} />
+            收起月历
+          </>
+        ) : (
+          <>
+            <ChevronDown size={14} />
+            展开月历
+          </>
+        )}
+      </button>
 
       <section className="day-panel">
         <div className="day-panel-head">
@@ -114,7 +174,10 @@ export function CalendarView({
                 key={task.id}
                 task={task}
                 onToggle={onToggle}
+                onToggleSubtask={onToggleSubtask}
                 onOpen={onEdit}
+                onFocus={onFocus}
+                onTagClick={onTagClick}
               />
             ))}
           </div>
@@ -151,7 +214,10 @@ export function CalendarView({
                     key={task.id}
                     task={task}
                     onToggle={onToggle}
+                    onToggleSubtask={onToggleSubtask}
                     onOpen={onEdit}
+                    onFocus={onFocus}
+                    onTagClick={onTagClick}
                   />
                 ))}
               </div>

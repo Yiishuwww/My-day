@@ -26,4 +26,10 @@ export interface Task {
   completedAt?: number
   createdAt: number
   updatedAt: number
+  /** Manual order inside the same priority bucket. */
+  sortOrder?: number
+  /** Present when this task is one day of a date-range series. */
+  seriesId?: string
+  rangeStart?: string
+  rangeEnd?: string
 }

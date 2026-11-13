@@ -8,11 +8,13 @@ import {
   Moon,
   Share,
   Sun,
+  Tag,
   Trash2,
   Upload,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Task, ThemeMode } from '../types'
+import { todayKey } from '../lib/dates'
 import {
   clearAllTasks,
   exportBackup,
@@ -25,6 +27,7 @@ import { isIOS, isStandalone, cx } from '../lib/utils'
 interface Props {
   tasks: Task[]
   notify: (message: string) => void
+  onManageTags: () => void
 }
 
 const THEME_OPTIONS: Array<{
@@ -37,12 +40,17 @@ const THEME_OPTIONS: Array<{
   { value: 'dark', label: '深色', icon: Moon },
 ]
 
-export function SettingsView({ tasks, notify }: Props) {
+export function SettingsView({ tasks, notify, onManageTags }: Props) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getTheme())
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const today = todayKey()
   const completedCount = tasks.filter((task) => task.completed).length
-  const openCount = tasks.length - completedCount
+  const openCount = tasks.filter(
+    (task) =>
+      !task.completed &&
+      !(task.seriesId && task.date && task.date < today),
+  ).length
   const showInstall = isIOS() && !isStandalone()
 
   const changeTheme = (mode: ThemeMode): void => {
@@ -132,6 +140,26 @@ export function SettingsView({ tasks, notify }: Props) {
               <span>{label}</span>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="settings-group">
+        <h2>整理</h2>
+        <div className="setting-list">
+          <button
+            type="button"
+            className="setting-row"
+            onClick={onManageTags}
+          >
+            <span className="setting-icon">
+              <Tag size={17} />
+            </span>
+            <span className="setting-text">
+              <strong>标签管理</strong>
+              <small>重命名、删除标签，或按标签查看任务</small>
+            </span>
+            <ChevronRight size={16} className="chev" />
+          </button>
         </div>
       </section>
 

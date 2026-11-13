@@ -1,8 +1,14 @@
-import { CalendarDays, Inbox, Settings, SunMedium } from 'lucide-react'
+import {
+  CalendarDays,
+  Inbox,
+  Settings,
+  SunMedium,
+  Timer,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cx } from '../lib/utils'
 
-export type Tab = 'today' | 'calendar' | 'inbox' | 'settings'
+export type Tab = 'today' | 'calendar' | 'inbox' | 'focus' | 'settings'
 
 interface Props {
   active: Tab
@@ -13,6 +19,7 @@ const TABS: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
   { key: 'today', label: '今日', icon: SunMedium },
   { key: 'calendar', label: '日历', icon: CalendarDays },
   { key: 'inbox', label: '收件箱', icon: Inbox },
+  { key: 'focus', label: '专注', icon: Timer },
   { key: 'settings', label: '设置', icon: Settings },
 ]
 

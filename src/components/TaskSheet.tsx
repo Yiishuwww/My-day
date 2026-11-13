@@ -1,8 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, Check, Clock, Plus, Trash2, X } from 'lucide-react'
 import type { Priority, Recurrence, Subtask, Task } from '../types'
-import { createTask, deleteTask, updateTask } from '../db'
-import { addDaysKey, humanDate, humanDuration, todayKey } from '../lib/dates'
+import {
+  createTask,
+  createTaskRange,
+  deleteTask,
+  deleteTaskSeries,
+  updateTask,
+} from '../db'
+import {
+  addDaysKey,
+  daysBetweenKeys,
+  humanDate,
+  humanDuration,
+  todayKey,
+} from '../lib/dates'
 import { parseQuickAdd } from '../lib/parse'
 import { cx, uid } from '../lib/utils'
 
@@ -40,6 +52,10 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
   const editing = state.mode === 'edit'
   const task = state.mode === 'edit' ? state.task : undefined
   const initial = state.mode === 'new' ? state.initial : undefined
+  const initialDay = task?.date ?? initial?.date ?? todayKey()
+  const isSeriesTask = Boolean(
+    task?.seriesId && task.rangeStart && task.rangeEnd,
+  )
 
   const [title, setTitle] = useState(task?.title ?? '')
   const [notes, setNotes] = useState(task?.notes ?? initial?.notes ?? '')
@@ -47,6 +63,13 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
     task?.date ?? initial?.date,
   )
   const [dateTouched, setDateTouched] = useState(false)
+  const [rangeMode, setRangeMode] = useState(false)
+  const [rangeStart, setRangeStart] = useState(
+    task?.rangeStart ?? initialDay,
+  )
+  const [rangeEnd, setRangeEnd] = useState(
+    task?.rangeEnd ?? addDaysKey(task?.rangeStart ?? initialDay, 6),
+  )
   const [time, setTime] = useState(task?.time ?? initial?.time ?? '')
   const [timeTouched, setTimeTouched] = useState(editing)
   const [duration, setDuration] = useState<number | undefined>(
@@ -98,7 +121,9 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
       ? duration
       : (parsedDuration ?? duration)
 
-  const showParsedDate = Boolean(!editing && parsedDate && !dateTouched)
+  const showParsedDate = Boolean(
+    !editing && !rangeMode && parsedDate && !dateTouched,
+  )
   const showParsedTime = Boolean(!editing && parsedTime && !timeTouched)
   const showParsedDuration = Boolean(
     !editing && parsedDuration && !durationTouched,
@@ -130,13 +155,15 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
   const customDateLabel =
     effectiveDate && customDateActive ? humanDate(effectiveDate) : '选日期'
 
-  const durationChoices = useMemo(() => {
-    const base = [15, 30, 60, 90, 120]
-    if (effectiveDuration && !base.includes(effectiveDuration)) {
-      return [...base, effectiveDuration].sort((a, b) => a - b)
-    }
-    return base
-  }, [effectiveDuration])
+  const quickDurations = [15, 30]
+  const customDurationValue =
+    effectiveDuration && !quickDurations.includes(effectiveDuration)
+      ? effectiveDuration
+      : ''
+  const rangeDayCount = useMemo(() => {
+    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) return 0
+    return daysBetweenKeys(rangeStart, rangeEnd) + 1
+  }, [rangeStart, rangeEnd])
 
   useEffect(() => {
     if (editing) return
@@ -166,6 +193,29 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
   const chooseDuration = (value: number): void => {
     setDurationTouched(true)
     setDuration(effectiveDuration === value ? undefined : value)
+  }
+
+  const setCustomDuration = (value: string): void => {
+    setDurationTouched(true)
+    if (!value) {
+      setDuration(undefined)
+      return
+    }
+    const minutes = Number(value)
+    if (Number.isFinite(minutes) && minutes > 0) {
+      setDuration(Math.min(1440, Math.round(minutes)))
+    } else {
+      setDuration(undefined)
+    }
+  }
+
+  const enableRangeMode = (): void => {
+    setError('')
+    const start = effectiveDate ?? today
+    setRangeStart(start)
+    setRangeEnd(addDaysKey(start, 6))
+    setRangeMode(true)
+    setRecurrence('')
   }
 
   const commitTag = (): void => {
@@ -215,13 +265,30 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
       titleRef.current?.focus()
       return
     }
-    if (recurrence && !effectiveDate) {
-      setError('重复任务需要先选择一个日期')
-      return
-    }
-    if (effectiveTime && !effectiveDate) {
-      setError('设置时间后需要选择一个日期')
-      return
+
+    if (rangeMode) {
+      if (!rangeStart || !rangeEnd) {
+        setError('请选择开始和结束日期')
+        return
+      }
+      if (rangeStart > rangeEnd) {
+        setError('结束日期不能早于开始日期')
+        return
+      }
+      const dayCount = daysBetweenKeys(rangeStart, rangeEnd) + 1
+      if (dayCount > 366) {
+        setError('日期段最多 366 天')
+        return
+      }
+    } else if (!isSeriesTask) {
+      if (recurrence && !effectiveDate) {
+        setError('重复任务需要先选择一个日期')
+        return
+      }
+      if (effectiveTime && !effectiveDate) {
+        setError('设置时间后需要选择一个日期')
+        return
+      }
     }
 
     const finalTags = Array.from(
@@ -239,24 +306,41 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
     ]
       .map((subtask) => ({ ...subtask, title: subtask.title.trim() }))
       .filter((subtask) => subtask.title.length > 0)
-
-    const payload = {
-      title: finalTitle,
-      notes: notes.trim(),
-      date: effectiveDate || undefined,
-      time: effectiveTime || undefined,
-      duration:
-        effectiveDuration && effectiveDuration > 0
-          ? effectiveDuration
-          : undefined,
-      priority,
-      tags: finalTags,
-      subtasks: finalSubtasks,
-      recurrence: recurrence || undefined,
-    }
+    const resolvedDuration =
+      effectiveDuration && effectiveDuration > 0
+        ? effectiveDuration
+        : undefined
 
     setBusy(true)
     try {
+      if (rangeMode) {
+        const count = await createTaskRange({
+          title: finalTitle,
+          notes: notes.trim(),
+          start: rangeStart,
+          end: rangeEnd,
+          time: effectiveTime || undefined,
+          duration: resolvedDuration,
+          priority,
+          tags: finalTags,
+          subtasks: finalSubtasks,
+        })
+        onSaved(`已添加 ${count} 天的任务`)
+        return
+      }
+
+      const payload = {
+        title: finalTitle,
+        notes: notes.trim(),
+        date: effectiveDate || undefined,
+        time: effectiveTime || undefined,
+        duration: resolvedDuration,
+        priority,
+        tags: finalTags,
+        subtasks: finalSubtasks,
+        recurrence: isSeriesTask ? undefined : recurrence || undefined,
+      }
+
       if (editing && task) {
         await updateTask(task.id, payload)
         onSaved('已保存')
@@ -277,6 +361,19 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
     try {
       await deleteTask(task.id)
       onSaved('已删除任务')
+    } catch {
+      setError('删除失败，请再试一次')
+      setBusy(false)
+    }
+  }
+
+  const handleDeleteSeries = async (): Promise<void> => {
+    if (!task?.seriesId || busy) return
+    if (!window.confirm('删除整个时间段的全部任务？')) return
+    setBusy(true)
+    try {
+      await deleteTaskSeries(task.seriesId)
+      onSaved('已删除整个时间段')
     } catch {
       setError('删除失败，请再试一次')
       setBusy(false)
@@ -369,41 +466,132 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
           )}
 
           <div className="field">
-            <div className="field-label">日期</div>
-            <div className="chip-row">
-              {quickDates.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  className={cx(
-                    'chip',
-                    effectiveDate === item.value && 'active',
-                  )}
-                  onClick={() => chooseDate(item.value)}
-                >
-                  {item.label}
-                </button>
-              ))}
-              <label className={cx('chip date-chip', customDateActive && 'active')}>
-                <CalendarDays size={14} />
-                <span>{customDateLabel}</span>
-                <input
-                  type="date"
-                  value={effectiveDate ?? ''}
-                  onChange={(event) =>
-                    chooseDate(event.target.value || undefined)
-                  }
-                  aria-label="选择日期"
-                />
-              </label>
-              <button
-                type="button"
-                className={cx('chip', !effectiveDate && 'active')}
-                onClick={() => chooseDate(undefined)}
-              >
-                无日期
-              </button>
+            <div className="field-label">
+              <span>日期</span>
+              {isSeriesTask && <span className="optional">日期段</span>}
             </div>
+
+            {isSeriesTask ? (
+              <div className="series-info">
+                <div className="series-info-row">
+                  {task?.date && (
+                    <span className="meta-chip">{humanDate(task.date)}</span>
+                  )}
+                  <span className="meta-chip">
+                    区间 {task?.rangeStart ? humanDate(task.rangeStart) : ''} –{' '}
+                    {task?.rangeEnd ? humanDate(task.rangeEnd) : ''}
+                  </span>
+                </div>
+                <p>日期段任务，修改只影响这一天。</p>
+                <button
+                  type="button"
+                  className="text-btn danger-text"
+                  onClick={handleDeleteSeries}
+                >
+                  删除整个时间段
+                </button>
+              </div>
+            ) : (
+              <>
+                {!editing && (
+                  <div className="segmented date-mode-toggle">
+                    <button
+                      type="button"
+                      className={cx('seg-option', !rangeMode && 'active')}
+                      onClick={() => {
+                        setRangeMode(false)
+                        setError('')
+                      }}
+                    >
+                      单日
+                    </button>
+                    <button
+                      type="button"
+                      className={cx('seg-option', rangeMode && 'active')}
+                      onClick={enableRangeMode}
+                    >
+                      日期段
+                    </button>
+                  </div>
+                )}
+
+                {rangeMode ? (
+                  <>
+                    <div className="range-dates">
+                      <label className="range-date">
+                        <span>开始</span>
+                        <input
+                          type="date"
+                          value={rangeStart}
+                          onChange={(event) => {
+                            setError('')
+                            setRangeStart(event.target.value)
+                          }}
+                        />
+                      </label>
+                      <span className="range-arrow">→</span>
+                      <label className="range-date">
+                        <span>结束</span>
+                        <input
+                          type="date"
+                          value={rangeEnd}
+                          min={rangeStart || today}
+                          onChange={(event) => {
+                            setError('')
+                            setRangeEnd(event.target.value)
+                          }}
+                        />
+                      </label>
+                    </div>
+                    <p className="field-note">
+                      {rangeDayCount > 0
+                        ? `共 ${rangeDayCount} 天，每天生成一条任务；最后一天会显示“最后一天！”。`
+                        : '请选择开始和结束日期。'}
+                    </p>
+                  </>
+                ) : (
+                  <div className="chip-row">
+                    {quickDates.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        className={cx(
+                          'chip',
+                          effectiveDate === item.value && 'active',
+                        )}
+                        onClick={() => chooseDate(item.value)}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                    <label
+                      className={cx(
+                        'chip date-chip',
+                        customDateActive && 'active',
+                      )}
+                    >
+                      <CalendarDays size={14} />
+                      <span>{customDateLabel}</span>
+                      <input
+                        type="date"
+                        value={effectiveDate ?? ''}
+                        onChange={(event) =>
+                          chooseDate(event.target.value || undefined)
+                        }
+                        aria-label="选择日期"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className={cx('chip', !effectiveDate && 'active')}
+                      onClick={() => chooseDate(undefined)}
+                    >
+                      无日期
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <div className="field">
@@ -420,11 +608,11 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
                   const value = event.target.value
                   setTime(value)
                   setTimeTouched(true)
-                  if (value && !effectiveDate) chooseDate(today)
+                  if (value && !rangeMode && !effectiveDate) chooseDate(today)
                 }}
                 aria-label="时间"
               />
-              {durationChoices.map((value) => (
+              {quickDurations.map((value) => (
                 <button
                   key={value}
                   type="button"
@@ -437,18 +625,20 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
                   {humanDuration(value)}
                 </button>
               ))}
-              {effectiveDuration && (
-                <button
-                  type="button"
-                  className="mini-clear"
-                  onClick={() => {
-                    setDuration(undefined)
-                    setDurationTouched(true)
-                  }}
-                >
-                  清除
-                </button>
-              )}
+              <label className="duration-custom">
+                <input
+                  type="number"
+                  min={5}
+                  max={1440}
+                  step={5}
+                  inputMode="numeric"
+                  value={customDurationValue}
+                  onChange={(event) => setCustomDuration(event.target.value)}
+                  placeholder="自定义"
+                  aria-label="自定义时长（分钟）"
+                />
+                <span>分钟</span>
+              </label>
             </div>
           </div>
 
@@ -480,31 +670,36 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          <div className="field">
-            <div className="field-label">重复</div>
-            <div className="chip-row">
-              {RECURRENCES.map((item) => (
-                <button
-                  key={item.value || 'none'}
-                  type="button"
-                  className={cx('chip', recurrence === item.value && 'active')}
-                  onClick={() => {
-                    if (error) setError('')
-                    setRecurrence(item.value)
-                  }}
-                >
-                  {item.label}
-                </button>
-              ))}
+          {!rangeMode && !isSeriesTask && (
+            <div className="field">
+              <div className="field-label">重复</div>
+              <div className="chip-row">
+                {RECURRENCES.map((item) => (
+                  <button
+                    key={item.value || 'none'}
+                    type="button"
+                    className={cx(
+                      'chip',
+                      recurrence === item.value && 'active',
+                    )}
+                    onClick={() => {
+                      if (error) setError('')
+                      setRecurrence(item.value)
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              {recurrence && (
+                <p className="field-note">
+                  {effectiveDate
+                    ? '完成后会自动生成下一次任务'
+                    : '重复任务需要先选择一个日期'}
+                </p>
+              )}
             </div>
-            {recurrence && (
-              <p className="field-note">
-                {effectiveDate
-                  ? '完成后会自动生成下一次任务'
-                  : '重复任务需要先选择一个日期'}
-              </p>
-            )}
-          </div>
+          )}
 
           <div className="field">
             <div className="field-label">
@@ -631,7 +826,7 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
               disabled={busy}
             >
               <Trash2 size={16} />
-              <span>删除</span>
+              <span>{isSeriesTask ? '删除这天' : '删除'}</span>
             </button>
           )}
           <button

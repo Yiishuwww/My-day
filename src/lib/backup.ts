@@ -58,6 +58,12 @@ function normalizeTask(raw: unknown): Task | null {
   const now = Date.now()
   const priority: Priority = r.priority === 2 ? 2 : r.priority === 1 ? 1 : 0
   const date = validDate(r.date)
+  const rangeStart = validDate(r.rangeStart)
+  const rangeEnd = validDate(r.rangeEnd)
+  const seriesId =
+    typeof r.seriesId === 'string' && rangeStart && rangeEnd
+      ? r.seriesId
+      : undefined
   const recurrence: Recurrence | undefined =
     date &&
     (r.recurrence === 'daily' ||
@@ -94,6 +100,10 @@ function normalizeTask(raw: unknown): Task | null {
       typeof r.completedAt === 'number' ? r.completedAt : undefined,
     createdAt: typeof r.createdAt === 'number' ? r.createdAt : now,
     updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : now,
+    sortOrder: typeof r.sortOrder === 'number' ? r.sortOrder : undefined,
+    seriesId,
+    rangeStart: seriesId ? rangeStart : undefined,
+    rangeEnd: seriesId ? rangeEnd : undefined,
   }
 }
 
