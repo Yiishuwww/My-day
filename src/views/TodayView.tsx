@@ -27,13 +27,16 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   AlertCircle,
   CalendarPlus,
+  Check,
   ChevronDown,
   CircleCheck,
+  Flame,
   Moon,
+  Search,
   Sparkles,
   SunMedium,
 } from 'lucide-react'
-import type { Task } from '../types'
+import type { Habit, Task } from '../types'
 import { TaskItem } from '../components/TaskItem'
 import { EmptyState } from '../components/EmptyState'
 import {
@@ -44,6 +47,12 @@ import {
   todayKey,
 } from '../lib/dates'
 import { reorderTasks } from '../db'
+import {
+  habitScheduleLabel,
+  habitStreak,
+  isHabitChecked,
+  isHabitDue,
+} from '../lib/habits'
 import { setTheme } from '../lib/theme'
 import { cx } from '../lib/utils'
 
@@ -56,6 +65,11 @@ interface Props {
   onMoveAllOverdue: (ids: string[]) => void
   onFocus: (task: Task) => void
   onTagClick: (tag: string) => void
+  onQuickSchedule: (task: Task, date: string) => void
+  onSearch: () => void
+  habits: Habit[]
+  onToggleHabit: (habit: Habit, date: string) => void
+  onOpenReview: () => void
 }
 
 function SortableTask(props: ComponentProps<typeof TaskItem>) {
@@ -110,6 +124,11 @@ export function TodayView({
   onMoveAllOverdue,
   onFocus,
   onTagClick,
+  onQuickSchedule,
+  onSearch,
+  habits,
+  onToggleHabit,
+  onOpenReview,
 }: Props) {
   const today = todayKey()
   const [showDone, setShowDone] = useState(false)
@@ -167,6 +186,14 @@ export function TodayView({
     () => sortTasks(todayTasks.filter((task) => task.completed)),
     [todayTasks],
   )
+
+  const dueHabits = useMemo(
+    () => habits.filter((habit) => isHabitDue(habit, today)),
+    [habits, today],
+  )
+  const doneHabitCount = dueHabits.filter((habit) =>
+    isHabitChecked(habit, today),
+  ).length
 
   const total = todayTasks.length
   const done = doneToday.length
@@ -229,15 +256,26 @@ export function TodayView({
             <p className="hero-date">{humanDateWithWeekday(today)}</p>
             <h1>{greeting()}</h1>
           </div>
-          <button
-            type="button"
-            className="hero-icon theme-toggle"
-            onClick={toggleTheme}
-            aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
-            title={isDark ? '切换到浅色模式' : '切换到深色模式'}
-          >
-            {isDark ? <SunMedium size={20} /> : <Moon size={20} />}
-          </button>
+          <div className="hero-actions">
+            <button
+              type="button"
+              className="hero-icon search-toggle"
+              onClick={onSearch}
+              aria-label="搜索任务"
+              title="搜索任务"
+            >
+              <Search size={19} />
+            </button>
+            <button
+              type="button"
+              className="hero-icon theme-toggle"
+              onClick={toggleTheme}
+              aria-label={isDark ? '切换到浅色模式' : '切换到深色模式'}
+              title={isDark ? '切换到浅色模式' : '切换到深色模式'}
+            >
+              {isDark ? <SunMedium size={20} /> : <Moon size={20} />}
+            </button>
+          </div>
         </div>
         <div className="hero-progress">
           <div
@@ -286,6 +324,8 @@ export function TodayView({
                 onOpen={onEdit}
                 onFocus={onFocus}
                 onTagClick={onTagClick}
+                onQuickSchedule={onQuickSchedule}
+                quickSchedule
               />
             ))}
           </div>
@@ -373,6 +413,70 @@ export function TodayView({
               </div>
             )}
           </>
+        )}
+      </section>
+
+      <section className="section habits-section">
+        <div className="section-head">
+          <div className="section-title">
+            <h2>习惯</h2>
+            {dueHabits.length > 0 && (
+              <span className="count-pill">
+                {doneHabitCount}/{dueHabits.length}
+              </span>
+            )}
+          </div>
+          <button type="button" className="text-btn" onClick={onOpenReview}>
+            回顾
+          </button>
+        </div>
+
+        {dueHabits.length > 0 ? (
+          <div className="habit-today-list">
+            {dueHabits.map((habit) => {
+              const checked = isHabitChecked(habit, today)
+              const streak = habitStreak(habit, today)
+              return (
+                <button
+                  key={habit.id}
+                  type="button"
+                  className={cx(
+                    'habit-today-row',
+                    checked && 'is-checked',
+                  )}
+                  onClick={() => onToggleHabit(habit, today)}
+                  aria-pressed={checked}
+                >
+                  <span className="habit-today-check">
+                    {checked && <Check size={14} strokeWidth={3.2} />}
+                  </span>
+                  <span className="habit-today-main">
+                    <span className="habit-today-name">{habit.name}</span>
+                    <span className="habit-today-meta">
+                      {habitScheduleLabel(habit)}
+                    </span>
+                  </span>
+                  {streak > 0 && (
+                    <span className="habit-today-streak">
+                      <Flame size={12} />
+                      {streak}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        ) : habits.length === 0 ? (
+          <button
+            type="button"
+            className="habit-empty-card"
+            onClick={onOpenReview}
+          >
+            <span>还没有习惯</span>
+            <span>去创建一个 →</span>
+          </button>
+        ) : (
+          <p className="habit-rest">今天没有需要打卡的习惯。</p>
         )}
       </section>
     </div>

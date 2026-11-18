@@ -13,6 +13,7 @@ interface Props {
   onEdit: (task: Task) => void
   onFocus: (task: Task) => void
   onTagClick: (tag: string) => void
+  onQuickSchedule: (task: Task, date: string) => void
   onNew: () => void
 }
 
@@ -23,6 +24,7 @@ export function InboxView({
   onEdit,
   onFocus,
   onTagClick,
+  onQuickSchedule,
   onNew,
 }: Props) {
   const [showDone, setShowDone] = useState(false)
@@ -68,6 +70,8 @@ export function InboxView({
                 onOpen={onEdit}
                 onFocus={onFocus}
                 onTagClick={onTagClick}
+                onQuickSchedule={onQuickSchedule}
+                quickSchedule
               />
             ))}
           </div>
@@ -103,6 +107,8 @@ export function InboxView({
                     onOpen={onEdit}
                     onFocus={onFocus}
                     onTagClick={onTagClick}
+                    onQuickSchedule={onQuickSchedule}
+                    quickSchedule
                   />
                 ))}
               </div>

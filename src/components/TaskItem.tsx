@@ -1,6 +1,12 @@
 import { Check, Clock, Flag, Repeat, Timer } from 'lucide-react'
 import type { Task } from '../types'
-import { humanDate, humanDateWithWeekday, humanDuration } from '../lib/dates'
+import {
+  addDaysKey,
+  humanDate,
+  humanDateWithWeekday,
+  humanDuration,
+  todayKey,
+} from '../lib/dates'
 import { cx } from '../lib/utils'
 
 interface Props {
@@ -10,6 +16,8 @@ interface Props {
   onToggleSubtask?: (task: Task, subtaskId: string) => void
   onTagClick?: (tag: string) => void
   onFocus?: (task: Task) => void
+  onQuickSchedule?: (task: Task, date: string) => void
+  quickSchedule?: boolean
   overdue?: boolean
   showDate?: boolean
 }
@@ -21,6 +29,8 @@ export function TaskItem({
   onToggleSubtask,
   onTagClick,
   onFocus,
+  onQuickSchedule,
+  quickSchedule,
   overdue,
   showDate,
 }: Props) {
@@ -186,6 +196,27 @@ export function TaskItem({
                 </span>
               </div>
             ))}
+          </div>
+        )}
+
+        {quickSchedule && !task.completed && onQuickSchedule && (
+          <div className="quick-actions">
+            <button
+              type="button"
+              className="quick-chip"
+              onClick={() => onQuickSchedule(task, todayKey())}
+            >
+              今天
+            </button>
+            <button
+              type="button"
+              className="quick-chip"
+              onClick={() =>
+                onQuickSchedule(task, addDaysKey(todayKey(), 1))
+              }
+            >
+              明天
+            </button>
           </div>
         )}
       </div>

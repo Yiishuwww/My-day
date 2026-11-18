@@ -33,3 +33,32 @@ export interface Task {
   rangeStart?: string
   rangeEnd?: string
 }
+
+export interface TrashEntry {
+  id: string
+  task: Task
+  deletedAt: number
+}
+
+export type HabitSchedule = 'daily' | 'weekdays' | 'custom'
+
+export interface Habit {
+  id: string
+  name: string
+  schedule: HabitSchedule
+  /** ISO weekdays: 1 = Monday ... 7 = Sunday */
+  weekdays: number[]
+  /** Dates completed, YYYY-MM-DD */
+  checkins: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface FocusSession {
+  id: string
+  taskId?: string
+  taskTitle: string
+  durationSec: number
+  startedAt: number
+  endedAt: number
+}

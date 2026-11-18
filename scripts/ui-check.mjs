@@ -249,7 +249,7 @@ try {
   await page
     .locator('.inbox-view .task-card')
     .filter({ hasText: '查快递' })
-    .locator('.task-main')
+    .locator('.task-open')
     .click()
   await page.locator('.sheet .chip', { hasText: '今天' }).first().click()
   await saveSheet()
@@ -285,6 +285,9 @@ try {
   const backup = JSON.parse(await readFile(backupPath, 'utf8'))
   if (!Array.isArray(backup.tasks) || backup.tasks.length < 3) {
     throw new Error('Backup export did not contain tasks')
+  }
+  if (!Array.isArray(backup.habits) || !Array.isArray(backup.focusSessions)) {
+    throw new Error('Backup export missing habits/focus history')
   }
   log(`JSON backup exported with ${backup.tasks.length} tasks`)
 

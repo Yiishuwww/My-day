@@ -6,6 +6,7 @@ import {
   createTaskRange,
   deleteTask,
   deleteTaskSeries,
+  restoreTrashEntry,
   updateTask,
 } from '../db'
 import {
@@ -25,7 +26,11 @@ export type SheetState =
 interface Props {
   state: SheetState
   onClose: () => void
-  onSaved: (message: string) => void
+  onSaved: (
+    message: string,
+    action?: { label: string; onClick: () => void },
+  ) => void
+  onEditSeries?: (task: Task) => void
 }
 
 const PRIORITIES: Array<{ value: Priority; label: string }> = [
@@ -48,7 +53,12 @@ function splitTagInput(value: string): string[] {
     .filter(Boolean)
 }
 
-export function TaskSheet({ state, onClose, onSaved }: Props) {
+export function TaskSheet({
+  state,
+  onClose,
+  onSaved,
+  onEditSeries,
+}: Props) {
   const editing = state.mode === 'edit'
   const task = state.mode === 'edit' ? state.task : undefined
   const initial = state.mode === 'new' ? state.initial : undefined
@@ -356,11 +366,19 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
 
   const handleDelete = async (): Promise<void> => {
     if (!task || busy) return
-    if (!window.confirm('删除这个任务？')) return
+    const prompt = isSeriesTask
+      ? '跳过这一天？之后仍可从最近删除恢复。'
+      : '删除这个任务？'
+    if (!window.confirm(prompt)) return
     setBusy(true)
     try {
       await deleteTask(task.id)
-      onSaved('已删除任务')
+      onSaved(isSeriesTask ? '已跳过这天' : '已移到最近删除', {
+        label: '撤销',
+        onClick: () => {
+          void restoreTrashEntry(task.id)
+        },
+      })
     } catch {
       setError('删除失败，请再试一次')
       setBusy(false)
@@ -483,13 +501,26 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
                   </span>
                 </div>
                 <p>日期段任务，修改只影响这一天。</p>
-                <button
-                  type="button"
-                  className="text-btn danger-text"
-                  onClick={handleDeleteSeries}
-                >
-                  删除整个时间段
-                </button>
+                <div className="series-info-actions">
+                  {onEditSeries && (
+                    <button
+                      type="button"
+                      className="text-btn"
+                      onClick={() => onEditSeries(task as Task)}
+                      disabled={busy}
+                    >
+                      编辑整个时间段
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="text-btn danger-text"
+                    onClick={handleDeleteSeries}
+                    disabled={busy}
+                  >
+                    删除整个时间段
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -826,7 +857,7 @@ export function TaskSheet({ state, onClose, onSaved }: Props) {
               disabled={busy}
             >
               <Trash2 size={16} />
-              <span>{isSeriesTask ? '删除这天' : '删除'}</span>
+              <span>{isSeriesTask ? '跳过这天' : '删除'}</span>
             </button>
           )}
           <button

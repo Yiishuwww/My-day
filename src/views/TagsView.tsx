@@ -35,8 +35,14 @@ export function TagsView({
 
   const tagStats = useMemo(() => {
     const counts = new Map<string, number>()
+    const countedSeries = new Set<string>()
     for (const task of tasks) {
       for (const tag of task.tags) {
+        if (task.seriesId) {
+          const key = `${tag}::${task.seriesId}`
+          if (countedSeries.has(key)) continue
+          countedSeries.add(key)
+        }
         counts.set(tag, (counts.get(tag) ?? 0) + 1)
       }
     }

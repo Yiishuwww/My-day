@@ -11,6 +11,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "check:ui": "node scripts/ui-check.mjs",
     "check:features": "node scripts/feature-check.mjs",
+    "check:phase1": "node scripts/phase1-check.mjs",
+    "check:phase3": "node scripts/phase3-check.mjs",
     "check:touch": "node scripts/touch-drag-check.mjs",
     "check:db": "tsx scripts/db-check.ts",
     "check:pwa": "node scripts/pwa-check.mjs"

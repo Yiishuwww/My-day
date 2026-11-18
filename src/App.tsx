@@ -4,30 +4,64 @@ import { Plus } from 'lucide-react'
 import {
   db,
   moveTasksToDate,
+  purgeTrash,
+  recordFocusSession,
+  restoreTrashEntries,
+  toggleHabitCheckin,
   toggleSubtask,
   toggleTask,
+  trashTasks,
+  updateTask,
 } from './db'
-import type { Task } from './types'
+import type { Habit, Task } from './types'
 import { humanDate, todayKey } from './lib/dates'
 import { usePomodoro } from './hooks/usePomodoro'
 import { TabBar, type Tab } from './components/TabBar'
 import { TaskSheet, type SheetState } from './components/TaskSheet'
+import { SeriesSheet } from './components/SeriesSheet'
 import { TodayView } from './views/TodayView'
 import { CalendarView } from './views/CalendarView'
 import { InboxView } from './views/InboxView'
 import { FocusView } from './views/FocusView'
 import { SettingsView } from './views/SettingsView'
 import { TagsView } from './views/TagsView'
+import { TrashView } from './views/TrashView'
+import { SearchView } from './views/SearchView'
+import { ReviewView } from './views/ReviewView'
+
+type SpecialView =
+  | { kind: 'tags'; tag?: string }
+  | { kind: 'trash' }
+  | { kind: 'search' }
+  | { kind: 'review' }
+  | null
+
+interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
+interface ToastState {
+  message: string
+  actionLabel?: string
+  action?: () => void
+}
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('today')
   const [selectedDate, setSelectedDate] = useState<string>(() => todayKey())
   const [sheet, setSheet] = useState<SheetState | null>(null)
-  const [tagView, setTagView] = useState<{ tag?: string } | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const [seriesEdit, setSeriesEdit] = useState<Task | null>(null)
+  const [specialView, setSpecialView] = useState<SpecialView>(null)
+  const [toast, setToast] = useState<ToastState | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
   const pendingToggles = useRef(new Set<string>())
   const tasks = useLiveQuery(() => db.tasks.toArray(), [])
+  const habits = useLiveQuery(
+    () => db.habits.orderBy('createdAt').toArray(),
+    [],
+    [],
+  )
   const {
     session: focusSession,
     start: startPomodoro,
@@ -36,10 +70,17 @@ export default function App() {
     clear: clearPomodoro,
   } = usePomodoro()
 
-  const notify = useCallback((message: string) => {
-    setToast(message)
+  const notify = useCallback((message: string, action?: ToastAction) => {
+    setToast({
+      message,
+      actionLabel: action?.label,
+      action: action?.onClick,
+    })
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
-    toastTimer.current = window.setTimeout(() => setToast(null), 2200)
+    toastTimer.current = window.setTimeout(
+      () => setToast(null),
+      action ? 5000 : 2200,
+    )
   }, [])
 
   useEffect(() => {
@@ -50,7 +91,7 @@ export default function App() {
 
   useEffect(() => {
     window.scrollTo(0, 0)
-  }, [tab])
+  }, [tab, specialView])
 
   useEffect(() => {
     if (navigator.storage && typeof navigator.storage.persist === 'function') {
@@ -58,16 +99,39 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    void purgeTrash(30)
+  }, [])
+
   const previousFocusStatus = useRef(focusSession.status)
+  const lastLoggedFocus = useRef<number | null>(null)
   useEffect(() => {
     if (
       previousFocusStatus.current === 'running' &&
       focusSession.status === 'done'
     ) {
       notify('专注结束')
+      const endedAt = focusSession.finishedAt ?? Date.now()
+      if (lastLoggedFocus.current !== endedAt) {
+        lastLoggedFocus.current = endedAt
+        void recordFocusSession({
+          taskId: focusSession.taskId,
+          taskTitle: focusSession.taskTitle,
+          durationSec: focusSession.durationSec,
+          startedAt: endedAt - focusSession.durationSec * 1000,
+          endedAt,
+        })
+      }
     }
     previousFocusStatus.current = focusSession.status
-  }, [focusSession.status, notify])
+  }, [
+    focusSession.durationSec,
+    focusSession.finishedAt,
+    focusSession.status,
+    focusSession.taskId,
+    focusSession.taskTitle,
+    notify,
+  ])
 
   const openNew = useCallback((initial?: Partial<Task>) => {
     setSheet({ mode: 'new', initial })
@@ -80,9 +144,9 @@ export default function App() {
   const closeSheet = useCallback(() => setSheet(null), [])
 
   const handleSaved = useCallback(
-    (message: string) => {
+    (message: string, action?: ToastAction) => {
       setSheet(null)
-      notify(message)
+      notify(message, action)
     },
     [notify],
   )
@@ -126,17 +190,123 @@ export default function App() {
     [notify],
   )
 
+  const handleQuickSchedule = useCallback(
+    (task: Task, date: string) => {
+      void updateTask(task.id, { date })
+        .then(() => notify(`已移到 ${humanDate(date)}`))
+        .catch(() => notify('改期失败，请再试一次'))
+    },
+    [notify],
+  )
+
+  const handleBulkComplete = useCallback(
+    (items: Task[]) => {
+      const targets = items.filter((task) => !task.completed)
+      if (!targets.length) {
+        notify('所选任务都已完成')
+        return
+      }
+      void (async () => {
+        let count = 0
+        for (const task of targets) {
+          try {
+            await toggleTask(task.id)
+            count += 1
+          } catch {
+            // Continue with the rest.
+          }
+        }
+        notify(count ? `已完成 ${count} 个任务` : '操作失败，请再试一次')
+      })()
+    },
+    [notify],
+  )
+
+  const handleBulkTrash = useCallback(
+    (items: Task[]) => {
+      if (!items.length) return
+      const ids = items.map((task) => task.id)
+      void trashTasks(ids)
+        .then((moved) => {
+          if (!moved.length) return
+          notify(`已移到最近删除 ${moved.length} 个任务`, {
+            label: '撤销',
+            onClick: () => {
+              void restoreTrashEntries(ids).then((count) => {
+                notify(count ? `已恢复 ${count} 个任务` : '没有可恢复的任务')
+              })
+            },
+          })
+        })
+        .catch(() => notify('删除失败，请再试一次'))
+    },
+    [notify],
+  )
+
+  const handleBulkReschedule = useCallback(
+    (items: Task[], date: string | null) => {
+      const targets = items.filter(
+        (task) => !task.completed && !task.seriesId,
+      )
+      if (!targets.length) {
+        notify('没有可以改期的任务')
+        return
+      }
+      void Promise.all(
+        targets.map((task) =>
+          updateTask(task.id, { date: date ?? undefined }),
+        ),
+      )
+        .then(() =>
+          notify(
+            date
+              ? `已把 ${targets.length} 个任务移到 ${humanDate(date)}`
+              : `已把 ${targets.length} 个任务移到收件箱`,
+          ),
+        )
+        .catch(() => notify('改期失败，请再试一次'))
+    },
+    [notify],
+  )
+
   const handleTagClick = useCallback((tag: string) => {
-    setTagView({ tag })
+    setSpecialView({ kind: 'tags', tag })
   }, [])
 
   const handleManageTags = useCallback(() => {
-    setTagView({})
+    setSpecialView({ kind: 'tags' })
   }, [])
 
+  const handleOpenTrash = useCallback(() => {
+    setSpecialView({ kind: 'trash' })
+  }, [])
+
+  const handleOpenSearch = useCallback(() => {
+    setSpecialView({ kind: 'search' })
+  }, [])
+
+  const handleOpenReview = useCallback(() => {
+    setSpecialView({ kind: 'review' })
+  }, [])
+
+  const handleToggleHabit = useCallback(
+    (habit: Habit, date: string) => {
+      void toggleHabitCheckin(habit.id, date).catch(() => {
+        notify('操作失败，请再试一次')
+      })
+    },
+    [notify],
+  )
+
   const openEditFromTags = useCallback((task: Task) => {
-    setTagView(null)
+    setSpecialView(null)
     setSheet({ mode: 'edit', task })
+  }, [])
+
+  const handleEditSeries = useCallback((task: Task) => {
+    if (!task.seriesId) return
+    setSheet(null)
+    setSeriesEdit(task)
   }, [])
 
   const startFocus = useCallback(
@@ -153,12 +323,8 @@ export default function App() {
           return
         }
       }
-      if (
-        task?.id &&
-        focusSession.taskId === task.id &&
-        active
-      ) {
-        setTagView(null)
+      if (task?.id && focusSession.taskId === task.id && active) {
+        setSpecialView(null)
         setTab('focus')
         return
       }
@@ -167,7 +333,7 @@ export default function App() {
         duration,
         task ? { id: task.id, title: task.title } : undefined,
       )
-      setTagView(null)
+      setSpecialView(null)
       setTab('focus')
     },
     [focusSession, startPomodoro],
@@ -194,7 +360,7 @@ export default function App() {
         ? { id: focusSession.taskId, title: focusSession.taskTitle }
         : undefined,
     )
-    setTagView(null)
+    setSpecialView(null)
     setTab('focus')
   }, [focusSession, startPomodoro])
 
@@ -208,17 +374,42 @@ export default function App() {
 
   return (
     <div className="app">
-      {tagView ? (
+      {specialView?.kind === 'tags' ? (
         <main className="app-main">
           <TagsView
-            key={tagView.tag ?? 'all-tags'}
+            key={specialView.tag ?? 'all-tags'}
             tasks={tasks}
-            initialTag={tagView.tag}
-            onBack={() => setTagView(null)}
+            initialTag={specialView.tag}
+            onBack={() => setSpecialView(null)}
             onToggle={handleToggle}
             onToggleSubtask={handleToggleSubtask}
             onEdit={openEditFromTags}
             onFocus={handleStartFocus}
+            notify={notify}
+          />
+        </main>
+      ) : specialView?.kind === 'trash' ? (
+        <main className="app-main">
+          <TrashView onBack={() => setSpecialView(null)} notify={notify} />
+        </main>
+      ) : specialView?.kind === 'search' ? (
+        <main className="app-main">
+          <SearchView
+            tasks={tasks}
+            onBack={() => setSpecialView(null)}
+            onEdit={openEdit}
+            onBulkComplete={handleBulkComplete}
+            onBulkTrash={handleBulkTrash}
+            onBulkReschedule={handleBulkReschedule}
+          />
+        </main>
+      ) : specialView?.kind === 'review' ? (
+        <main className="app-main">
+          <ReviewView
+            tasks={tasks}
+            habits={habits}
+            onBack={() => setSpecialView(null)}
+            onToggleHabit={handleToggleHabit}
             notify={notify}
           />
         </main>
@@ -235,6 +426,11 @@ export default function App() {
                 onMoveAllOverdue={handleMoveAllOverdue}
                 onFocus={handleStartFocus}
                 onTagClick={handleTagClick}
+                onQuickSchedule={handleQuickSchedule}
+                onSearch={handleOpenSearch}
+                habits={habits}
+                onToggleHabit={handleToggleHabit}
+                onOpenReview={handleOpenReview}
               />
             )}
 
@@ -260,6 +456,7 @@ export default function App() {
                 onEdit={openEdit}
                 onFocus={handleStartFocus}
                 onTagClick={handleTagClick}
+                onQuickSchedule={handleQuickSchedule}
                 onNew={() => openNew()}
               />
             )}
@@ -282,6 +479,8 @@ export default function App() {
                 tasks={tasks}
                 notify={notify}
                 onManageTags={handleManageTags}
+                onOpenTrash={handleOpenTrash}
+                onOpenReview={handleOpenReview}
               />
             )}
           </main>
@@ -310,12 +509,40 @@ export default function App() {
           state={sheet}
           onClose={closeSheet}
           onSaved={handleSaved}
+          onEditSeries={handleEditSeries}
+        />
+      )}
+
+      {seriesEdit && (
+        <SeriesSheet
+          task={seriesEdit}
+          onClose={() => setSeriesEdit(null)}
+          onSaved={(message) => {
+            setSeriesEdit(null)
+            notify(message)
+          }}
         />
       )}
 
       {toast && (
         <div className="toast" role="status">
-          {toast}
+          <span>{toast.message}</span>
+          {toast.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                const action = toast.action
+                if (toastTimer.current) {
+                  window.clearTimeout(toastTimer.current)
+                }
+                setToast(null)
+                action?.()
+              }}
+            >
+              {toast.actionLabel}
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -72,9 +72,19 @@ const {
   createTaskRange,
   deleteTaskSeries,
   deleteTag,
+  purgeTrash,
   renameTag,
   reorderTasks,
+  restoreTrashEntries,
+  restoreTrashEntry,
   toggleSubtask,
+  trashTask,
+  trashTasks,
+  updateTaskSeries,
+  createHabit,
+  updateHabit,
+  toggleHabitCheckin,
+  recordFocusSession,
 } = await import('../src/db')
 const { importBackup } = await import('../src/lib/backup')
 
@@ -140,9 +150,66 @@ try {
 
   const seriesId = rangeTasks[0]?.seriesId
   assert.ok(seriesId, 'range has series id')
+  const completedRangeTask = rangeTasks.find(
+    (task) => task.date === '2026-11-13',
+  )
+  assert.ok(completedRangeTask, 'range day exists')
+  await db.tasks.update(completedRangeTask.id, {
+    completed: true,
+    completedAt: Date.now(),
+  })
+
+  const seriesUpdate = await updateTaskSeries(seriesId as string, {
+    title: '新连续任务',
+    notes: '更新过',
+    time: '09:30',
+    duration: 45,
+    priority: 2,
+    tags: ['学习'],
+    start: '2026-11-12',
+    end: '2026-11-16',
+  })
+  assert.deepEqual(
+    seriesUpdate,
+    { updated: 2, created: 2, removed: 0 },
+    'series update counts',
+  )
+  const updatedSeries = await db.tasks
+    .where('seriesId')
+    .equals(seriesId as string)
+    .toArray()
+  assert.equal(updatedSeries.length, 5, 'series extend creates five days')
+  const historyTask = updatedSeries.find(
+    (task) => task.date === '2026-11-13',
+  )
+  assert.equal(
+    historyTask?.title,
+    '连续任务',
+    'series edit leaves completed history untouched',
+  )
+  assert.equal(historyTask?.duration, 30, 'history duration unchanged')
+  const updatedDay = updatedSeries.find(
+    (task) => task.date === '2026-11-14',
+  )
+  assert.equal(updatedDay?.title, '新连续任务', 'series title updated')
+  assert.equal(updatedDay?.time, '09:30', 'series time updated')
+  assert.equal(updatedDay?.duration, 45, 'series duration updated')
+  assert.equal(updatedDay?.priority, 2, 'series priority updated')
+  assert.deepEqual(updatedDay?.tags, ['学习'], 'series tags updated')
+  assert.equal(updatedDay?.rangeStart, '2026-11-12', 'series start updated')
+  assert.equal(updatedDay?.rangeEnd, '2026-11-16', 'series end updated')
+  assert.ok(
+    updatedSeries.some((task) => task.date === '2026-11-12'),
+    'series start extension creates a task',
+  )
+  assert.ok(
+    updatedSeries.some((task) => task.date === '2026-11-16'),
+    'series end extension creates a task',
+  )
+
   assert.equal(
     await deleteTaskSeries(seriesId as string),
-    3,
+    5,
     'delete series removes all days',
   )
 
@@ -163,6 +230,75 @@ try {
   assert.ok(
     (bReordered?.sortOrder ?? 0) < (aReordered?.sortOrder ?? 0),
     'manual reorder persists',
+  )
+
+  await trashTask('a')
+  assert.equal(await db.tasks.get('a'), undefined, 'soft delete removes task')
+  assert.ok(await db.trash.get('a'), 'soft delete creates trash entry')
+  assert.equal(await restoreTrashEntry('a'), true, 'restore trash entry')
+  assert.ok(await db.tasks.get('a'), 'restored task is back')
+  await trashTasks(['a', 'b'])
+  assert.equal(await db.tasks.get('a'), undefined, 'bulk trash removes a')
+  assert.equal(await db.tasks.get('b'), undefined, 'bulk trash removes b')
+  assert.equal(
+    await restoreTrashEntries(['a', 'b']),
+    2,
+    'bulk restore works',
+  )
+  const stale = await db.tasks.get('a')
+  assert.ok(stale, 'tasks restored after bulk trash')
+  await db.trash.put({
+    id: 'stale',
+    task: stale,
+    deletedAt: Date.now() - 31 * 24 * 60 * 60 * 1000,
+  })
+  await purgeTrash(30)
+  assert.equal(
+    await db.trash.get('stale'),
+    undefined,
+    'trash purge removes old entries',
+  )
+
+  const habit = await createHabit({
+    name: '喝水',
+    schedule: 'daily',
+    weekdays: [],
+  })
+  await toggleHabitCheckin(habit.id, '2026-11-18')
+  const habitChecked = await db.habits.get(habit.id)
+  assert.deepEqual(
+    habitChecked?.checkins,
+    ['2026-11-18'],
+    'habit checkin is stored',
+  )
+  await updateHabit(habit.id, {
+    name: '喝水升级',
+    schedule: 'custom',
+    weekdays: [5, 1, 3, 3],
+  })
+  const habitUpdated = await db.habits.get(habit.id)
+  assert.equal(habitUpdated?.name, '喝水升级')
+  assert.deepEqual(
+    habitUpdated?.weekdays,
+    [1, 3, 5],
+    'habit weekdays are cleaned and sorted',
+  )
+  assert.deepEqual(
+    habitUpdated?.checkins,
+    ['2026-11-18'],
+    'habit edit preserves checkins',
+  )
+
+  await recordFocusSession({
+    taskTitle: '专注测试',
+    durationSec: 90,
+    startedAt: 1000,
+    endedAt: 2000,
+  })
+  assert.equal(
+    (await db.focusSessions.toArray()).length,
+    1,
+    'focus session is stored',
   )
 
   const backup = {
@@ -200,13 +336,48 @@ try {
         sortOrder: 7,
       },
     ],
+    habits: [
+      {
+        id: 'habit-import',
+        name: '喝水导入',
+        schedule: 'custom',
+        weekdays: [1, 3, 5],
+        checkins: ['2026-11-18'],
+        createdAt: 6,
+        updatedAt: 6,
+      },
+    ],
+    focusSessions: [
+      {
+        id: 'focus-import',
+        taskTitle: '导入专注',
+        durationSec: 600,
+        startedAt: 7000,
+        endedAt: 8000,
+      },
+    ],
   }
-  const importedCount = await importBackup(
+  const imported = await importBackup(
     new File([JSON.stringify(backup)], 'backup.json', {
       type: 'application/json',
     }),
   )
-  assert.equal(importedCount, 2, 'backup import count')
+  assert.deepEqual(
+    imported,
+    { tasks: 2, habits: 1, focusSessions: 1 },
+    'backup import summary',
+  )
+  const importedHabit = await db.habits.get('habit-import')
+  assert.equal(importedHabit?.name, '喝水导入')
+  assert.deepEqual(importedHabit?.weekdays, [1, 3, 5])
+  assert.deepEqual(importedHabit?.checkins, ['2026-11-18'])
+  const importedFocus = await db.focusSessions.get('focus-import')
+  assert.equal(importedFocus?.durationSec, 600)
+  assert.equal(
+    (await db.focusSessions.toArray()).length,
+    1,
+    'import replaces focus history',
+  )
   const importedSeries = await db.tasks.get('series-import')
   assert.equal(importedSeries?.seriesId, 'series-x', 'series id survives import')
   assert.equal(

@@ -155,19 +155,7 @@ try {
   await shot('feature-range-lastday')
   log('Date-range tasks show daily and mark the last day without rollover')
 
-  await runCard.locator('.task-open').click()
-  await page.locator('.series-info').waitFor()
-  const seriesText = await page.locator('.series-info').innerText()
-  if (!seriesText.includes('修改只影响这一天')) {
-    fail('Series edit notice missing')
-  }
-  if (!(await page.getByRole('button', { name: '删除这天' }).count())) {
-    fail('Series delete-this-day label missing')
-  }
-  await page.locator('.sheet-close').click()
-  await page.locator('.sheet').waitFor({ state: 'hidden' })
-
-  // Calendar contains the past instance too
+  // Calendar contains the past instance; complete it so it becomes history
   await page.locator('.tab', { hasText: '日历' }).click()
   await page.locator(`.day-cell[data-date="${dates.yesterday}"]`).click()
   await page.waitForTimeout(180)
@@ -175,12 +163,84 @@ try {
   if (!yesterdayPanel.includes('晨间跑步')) {
     fail('Past range instance missing from calendar')
   }
+  await page
+    .locator('.day-panel .task-card')
+    .filter({ hasText: '晨间跑步' })
+    .locator('.task-check')
+    .click()
+  await page.waitForTimeout(250)
+  await page.locator(`.day-cell[data-date="${dates.today}"]`).click()
+  await page.locator('.tab', { hasText: '今日' }).click()
+
+  // Open the series day and inspect the shared edit entry
+  await runCard.locator('.task-open').click()
+  await page.locator('.series-info').waitFor()
+  const seriesText = await page.locator('.series-info').innerText()
+  if (!seriesText.includes('修改只影响这一天')) {
+    fail('Series edit notice missing')
+  }
+  if (!(await page.getByRole('button', { name: '跳过这天' }).count())) {
+    fail('Series skip-this-day label missing')
+  }
+  await page.getByRole('button', { name: '编辑整个时间段' }).click()
+  await page.locator('.sheet-head h2', { hasText: '编辑整个时间段' }).waitFor()
+  await page.locator('.sheet .title-input').fill('晨间慢跑')
+  await page.locator('.sheet .range-date input').nth(1).fill(dates.tomorrow)
+  await page.locator('.sheet .time-input').fill('07:00')
+  await page.locator('.sheet .duration-custom input').fill('20')
+  await page.locator('.sheet .tag-input').fill('健康')
+  await page.locator('.sheet .tag-input').press('Enter')
+  await page.locator('.sheet .seg-option').filter({ hasText: '高' }).click()
+  await page.locator('.sheet .primary-btn').click()
+  await page.locator('.sheet').waitFor({ state: 'hidden' })
+
+  const editedRun = page
+    .locator('.today-view .task-card')
+    .filter({ hasText: '晨间慢跑' })
+  await editedRun.waitFor()
+  const editedMeta = await editedRun.locator('.task-meta').innerText()
+  if (!editedMeta.includes('07:00') || !editedMeta.includes('20分钟')) {
+    fail(`Series edit did not update shared fields: ${editedMeta}`)
+  }
+  if (await editedRun.locator('.last-day-chip').count()) {
+    fail('Last-day badge should have moved after extending the range')
+  }
+
+  // The completed yesterday instance keeps its old title
+  await page.locator('.tab', { hasText: '日历' }).click()
+  await page.locator(`.day-cell[data-date="${dates.yesterday}"]`).click()
+  await page.waitForTimeout(150)
+  const doneToggle = page
+    .locator('.day-panel .done-toggle')
+    .filter({ hasText: '已完成' })
+  if (await doneToggle.count()) await doneToggle.click()
+  await page
+    .locator('.day-panel .done-list .task-card')
+    .filter({ hasText: '晨间跑步' })
+    .waitFor()
+  if (
+    await page
+      .locator('.day-panel .task-card')
+      .filter({ hasText: '晨间慢跑' })
+      .count()
+  ) {
+    fail('Completed range history was modified')
+  }
+
+  // Tomorrow is the new last day and has the new title
+  await page.locator(`.day-cell[data-date="${dates.tomorrow}"]`).click()
+  await page.waitForTimeout(150)
+  const tomorrowCard = page
+    .locator('.day-panel .task-card')
+    .filter({ hasText: '晨间慢跑' })
+  await tomorrowCard.waitFor()
+  await tomorrowCard.locator('.last-day-chip').waitFor()
   await page.locator('.tab', { hasText: '今日' }).click()
 
   // Delete the whole range from the edit sheet
   await page
     .locator('.today-view .task-card')
-    .filter({ hasText: '晨间跑步' })
+    .filter({ hasText: '晨间慢跑' })
     .locator('.task-open')
     .click()
   page.once('dialog', (dialog) => dialog.accept())
@@ -190,12 +250,12 @@ try {
   if (
     await page
       .locator('.today-view .task-card')
-      .filter({ hasText: '晨间跑步' })
+      .filter({ hasText: '晨间' })
       .count()
   ) {
     fail('Range series was not deleted')
   }
-  log('Range series can be deleted as a whole')
+  log('Series can be edited as a whole, history preserved, and deleted')
 
   // C. Tags: create, filter from task, rename, delete
   await openNewTask()

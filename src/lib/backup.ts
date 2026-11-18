@@ -1,5 +1,13 @@
 import { db } from '../db'
-import type { Priority, Recurrence, Subtask, Task } from '../types'
+import type {
+  FocusSession,
+  Habit,
+  HabitSchedule,
+  Priority,
+  Recurrence,
+  Subtask,
+  Task,
+} from '../types'
 import { todayKey } from './dates'
 import { buildIcs } from './ics'
 import { saveFile } from './files'
@@ -107,18 +115,109 @@ function normalizeTask(raw: unknown): Task | null {
   }
 }
 
+function normalizeHabit(raw: unknown): Habit | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (typeof r.id !== 'string' || typeof r.name !== 'string' || !r.name.trim()) {
+    return null
+  }
+
+  const schedule: HabitSchedule =
+    r.schedule === 'weekdays' || r.schedule === 'custom'
+      ? r.schedule
+      : 'daily'
+  let weekdays = Array.isArray(r.weekdays)
+    ? Array.from(
+        new Set(
+          r.weekdays.filter(
+            (day): day is number =>
+              typeof day === 'number' &&
+              Number.isInteger(day) &&
+              day >= 1 &&
+              day <= 7,
+          ),
+        ),
+      ).sort((a, b) => a - b)
+    : []
+  if (schedule === 'custom' && !weekdays.length) {
+    weekdays = [1, 2, 3, 4, 5]
+  }
+  const checkins = Array.isArray(r.checkins)
+    ? Array.from(
+        new Set(
+          r.checkins
+            .map(validDate)
+            .filter((date): date is string => Boolean(date)),
+        ),
+      ).sort()
+    : []
+  const now = Date.now()
+
+  return {
+    id: r.id,
+    name: r.name.trim(),
+    schedule,
+    weekdays,
+    checkins,
+    createdAt: typeof r.createdAt === 'number' ? r.createdAt : now,
+    updatedAt: typeof r.updatedAt === 'number' ? r.updatedAt : now,
+  }
+}
+
+function normalizeFocusSession(raw: unknown): FocusSession | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  if (
+    typeof r.id !== 'string' ||
+    typeof r.durationSec !== 'number' ||
+    r.durationSec <= 0 ||
+    typeof r.endedAt !== 'number'
+  ) {
+    return null
+  }
+  const durationSec = Math.round(r.durationSec)
+  return {
+    id: r.id,
+    taskId: typeof r.taskId === 'string' ? r.taskId : undefined,
+    taskTitle: typeof r.taskTitle === 'string' ? r.taskTitle : '',
+    durationSec,
+    startedAt:
+      typeof r.startedAt === 'number'
+        ? r.startedAt
+        : r.endedAt - durationSec * 1000,
+    endedAt: r.endedAt,
+  }
+}
+
+const LAST_BACKUP_KEY = 'myday.lastBackupAt'
+
+export function getLastBackupAt(): number | null {
+  const raw = localStorage.getItem(LAST_BACKUP_KEY)
+  if (!raw) return null
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
 export async function exportBackup(): Promise<boolean> {
-  const tasks = await db.tasks.toArray()
+  const [tasks, habits, focusSessions] = await Promise.all([
+    db.tasks.toArray(),
+    db.habits.toArray(),
+    db.focusSessions.toArray(),
+  ])
   const payload = {
     app: 'myday',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     tasks,
+    habits,
+    focusSessions,
   }
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: 'application/json',
   })
-  return saveFile(`myday-backup-${todayKey()}.json`, blob)
+  const saved = await saveFile(`myday-backup-${todayKey()}.json`, blob)
+  if (saved) localStorage.setItem(LAST_BACKUP_KEY, String(Date.now()))
+  return saved
 }
 
 export async function exportCalendar(tasks: Task[]): Promise<boolean> {
@@ -126,7 +225,13 @@ export async function exportCalendar(tasks: Task[]): Promise<boolean> {
   return saveFile(`myday-${todayKey()}.ics`, blob)
 }
 
-export async function importBackup(file: File): Promise<number> {
+export interface ImportResult {
+  tasks: number
+  habits: number
+  focusSessions: number
+}
+
+export async function importBackup(file: File): Promise<ImportResult> {
   const text = await file.text()
   let data: unknown
   try {
@@ -135,10 +240,14 @@ export async function importBackup(file: File): Promise<number> {
     throw new Error('invalid-json')
   }
 
+  const dataObject =
+    data && typeof data === 'object' && !Array.isArray(data)
+      ? (data as Record<string, unknown>)
+      : null
   const rawList = Array.isArray(data)
     ? data
-    : data && typeof data === 'object' && Array.isArray((data as { tasks?: unknown }).tasks)
-      ? (data as { tasks: unknown[] }).tasks
+    : dataObject && Array.isArray(dataObject.tasks)
+      ? dataObject.tasks
       : null
 
   if (!rawList) throw new Error('invalid-format')
@@ -150,14 +259,62 @@ export async function importBackup(file: File): Promise<number> {
     throw new Error('no-valid-tasks')
   }
 
+  const rawHabits =
+    dataObject && Array.isArray(dataObject.habits) ? dataObject.habits : []
+  const rawFocus =
+    dataObject && Array.isArray(dataObject.focusSessions)
+      ? dataObject.focusSessions
+      : []
+  const normalizedHabits = rawHabits
+    .map(normalizeHabit)
+    .filter((habit): habit is Habit => habit !== null)
+  const normalizedFocus = rawFocus
+    .map(normalizeFocusSession)
+    .filter((session): session is FocusSession => session !== null)
+
   const unique = Array.from(new Map(normalized.map((task) => [task.id, task])).values())
-  await db.transaction('rw', db.tasks, async () => {
-    await db.tasks.clear()
-    if (unique.length) await db.tasks.bulkAdd(unique)
-  })
-  return unique.length
+  const uniqueHabits = Array.from(
+    new Map(normalizedHabits.map((habit) => [habit.id, habit])).values(),
+  )
+  const uniqueFocus = Array.from(
+    new Map(normalizedFocus.map((session) => [session.id, session])).values(),
+  )
+
+  await db.transaction(
+    'rw',
+    db.tasks,
+    db.trash,
+    db.habits,
+    db.focusSessions,
+    async () => {
+      await db.tasks.clear()
+      await db.trash.clear()
+      await db.habits.clear()
+      await db.focusSessions.clear()
+      if (unique.length) await db.tasks.bulkAdd(unique)
+      if (uniqueHabits.length) await db.habits.bulkAdd(uniqueHabits)
+      if (uniqueFocus.length) await db.focusSessions.bulkAdd(uniqueFocus)
+    },
+  )
+  return {
+    tasks: unique.length,
+    habits: uniqueHabits.length,
+    focusSessions: uniqueFocus.length,
+  }
 }
 
-export async function clearAllTasks(): Promise<void> {
-  await db.tasks.clear()
+export async function clearAllData(): Promise<void> {
+  await db.transaction(
+    'rw',
+    db.tasks,
+    db.trash,
+    db.habits,
+    db.focusSessions,
+    async () => {
+      await db.tasks.clear()
+      await db.trash.clear()
+      await db.habits.clear()
+      await db.focusSessions.clear()
+    },
+  )
 }

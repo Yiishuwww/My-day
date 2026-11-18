@@ -28,6 +28,14 @@ page.on('pageerror', (error) => console.error('PAGE ERROR:', error.message))
 page.on('console', (message) => {
   if (message.type() === 'error') console.error('CONSOLE ERROR:', message.text())
 })
+page.on('response', (response) => {
+  if (!response.ok()) {
+    console.error(`HTTP ${response.status()}: ${response.url()}`)
+  }
+})
+page.on('requestfailed', (request) => {
+  console.error(`REQUEST FAILED: ${request.url()} (${request.failure()?.errorText})`)
+})
 
 try {
   await page.goto(baseURL, { waitUntil: 'networkidle' })

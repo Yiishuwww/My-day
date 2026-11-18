@@ -1,24 +1,27 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import {
   CalendarDays,
   ChevronRight,
   Download,
+  Flame,
   Monitor,
   Moon,
   Share,
   Sun,
   Tag,
   Trash2,
+  Undo2,
   Upload,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Task, ThemeMode } from '../types'
 import { todayKey } from '../lib/dates'
 import {
-  clearAllTasks,
+  clearAllData,
   exportBackup,
   exportCalendar,
+  getLastBackupAt,
   importBackup,
 } from '../lib/backup'
 import { getTheme, setTheme } from '../lib/theme'
@@ -28,6 +31,8 @@ interface Props {
   tasks: Task[]
   notify: (message: string) => void
   onManageTags: () => void
+  onOpenTrash: () => void
+  onOpenReview: () => void
 }
 
 const THEME_OPTIONS: Array<{
@@ -40,9 +45,28 @@ const THEME_OPTIONS: Array<{
   { value: 'dark', label: '深色', icon: Moon },
 ]
 
-export function SettingsView({ tasks, notify, onManageTags }: Props) {
+export function SettingsView({
+  tasks,
+  notify,
+  onManageTags,
+  onOpenTrash,
+  onOpenReview,
+}: Props) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => getTheme())
+  const [lastBackupAt, setLastBackupAt] = useState(() => getLastBackupAt())
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [pageOpenedAt] = useState(() => Date.now())
+  const backupDaysAgo = useMemo(
+    () =>
+      lastBackupAt
+        ? Math.max(
+            0,
+            Math.floor((pageOpenedAt - lastBackupAt) / (24 * 60 * 60 * 1000)),
+          )
+        : null,
+    [lastBackupAt, pageOpenedAt],
+  )
+  const needsBackup = backupDaysAgo === null || backupDaysAgo >= 30
 
   const today = todayKey()
   const completedCount = tasks.filter((task) => task.completed).length
@@ -61,6 +85,7 @@ export function SettingsView({ tasks, notify, onManageTags }: Props) {
   const handleExportBackup = async (): Promise<void> => {
     try {
       const saved = await exportBackup()
+      if (saved) setLastBackupAt(getLastBackupAt())
       notify(saved ? '备份已导出' : '已取消导出')
     } catch {
       notify('导出失败，请再试一次')
@@ -84,18 +109,22 @@ export function SettingsView({ tasks, notify, onManageTags }: Props) {
     if (!file) return
     if (!window.confirm('导入会覆盖当前所有任务，确定继续吗？')) return
     try {
-      const count = await importBackup(file)
-      notify(`已导入 ${count} 个任务`)
+      const result = await importBackup(file)
+      notify(
+        `已导入 ${result.tasks} 个任务${result.habits ? `、${result.habits} 个习惯` : ''}`,
+      )
     } catch {
       notify('导入失败：请选择正确的备份文件')
     }
   }
 
   const handleClear = async (): Promise<void> => {
-    if (!window.confirm('确定清空所有任务？此操作无法撤销。')) return
+    if (!window.confirm('确定清空所有任务、习惯和统计数据？此操作无法撤销。')) {
+      return
+    }
     try {
-      await clearAllTasks()
-      notify('所有任务已清空')
+      await clearAllData()
+      notify('所有数据已清空')
     } catch {
       notify('清空失败，请再试一次')
     }
@@ -157,6 +186,34 @@ export function SettingsView({ tasks, notify, onManageTags }: Props) {
             <span className="setting-text">
               <strong>标签管理</strong>
               <small>重命名、删除标签，或按标签查看任务</small>
+            </span>
+            <ChevronRight size={16} className="chev" />
+          </button>
+          <button
+            type="button"
+            className="setting-row"
+            onClick={onOpenReview}
+          >
+            <span className="setting-icon">
+              <Flame size={17} />
+            </span>
+            <span className="setting-text">
+              <strong>习惯与统计</strong>
+              <small>习惯打卡、连续天数和完成热力图</small>
+            </span>
+            <ChevronRight size={16} className="chev" />
+          </button>
+          <button
+            type="button"
+            className="setting-row"
+            onClick={onOpenTrash}
+          >
+            <span className="setting-icon">
+              <Undo2 size={17} />
+            </span>
+            <span className="setting-text">
+              <strong>最近删除</strong>
+              <small>误删的任务保留 30 天，可随时恢复</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -241,6 +298,15 @@ export function SettingsView({ tasks, notify, onManageTags }: Props) {
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
+        </div>
+
+        <div className={cx('backup-status', needsBackup && 'needs-backup')}>
+          <span>
+            {lastBackupAt
+              ? `上次备份：${backupDaysAgo === 0 ? '今天' : `${backupDaysAgo} 天前`}`
+              : '还没有导出过备份'}
+          </span>
+          {needsBackup && <strong>建议现在导出一份</strong>}
         </div>
 
         <p className="settings-note">
