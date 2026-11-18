@@ -89,7 +89,7 @@ try {
     await page.waitForTimeout(700)
   }
 
-  async function swipeTitle(locator, deltaX) {
+  async function swipeTitle(locator, deltaX, expectedBackground) {
     const box = await locator.boundingBox()
     if (!box) throw new Error('No bounding box for swipe')
     const startX = box.x + box.width / 2
@@ -105,6 +105,24 @@ try {
         touchPoints: point(startX + deltaX * fraction, startY),
       })
       await page.waitForTimeout(18)
+    }
+    await page.waitForTimeout(40)
+    if (expectedBackground) {
+      const row = locator.locator(
+        'xpath=ancestor::div[contains(@class,"swipe-row")]',
+      )
+      const backgrounds = row.locator('.swipe-bg')
+      const count = await backgrounds.count()
+      if (count !== 1) {
+        throw new Error(`Expected one swipe background, got ${count}`)
+      }
+      const classes = await backgrounds.getAttribute('class')
+      if (!classes?.includes(expectedBackground)) {
+        throw new Error(`Wrong swipe background: ${classes}`)
+      }
+      if ((await backgrounds.locator('svg').count()) !== 1) {
+        throw new Error('Swipe background icon missing')
+      }
     }
     await client.send('Input.dispatchTouchEvent', {
       type: 'touchEnd',
@@ -156,6 +174,7 @@ try {
       .filter({ hasText: '触摸B' })
       .locator('.task-title'),
     110,
+    'swipe-bg-complete',
   )
   await page
     .locator('.today-view .done-toggle')
@@ -176,6 +195,7 @@ try {
       .filter({ hasText: '触摸A' })
       .locator('.task-title'),
     -110,
+    'swipe-bg-delete',
   )
   await page
     .locator('.toast', { hasText: '已移到最近删除' })
@@ -186,6 +206,7 @@ try {
     .filter({ hasText: '触摸A' })
     .waitFor()
   console.log('✓ Left swipe deletes with undo')
+  console.log('✓ Swipe backgrounds use green check / red trash')
 
   // Inbox pending tasks accept the same long-press reorder
   await page.locator('.tab', { hasText: '收件箱' }).click()

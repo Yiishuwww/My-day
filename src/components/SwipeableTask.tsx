@@ -1,11 +1,13 @@
 import {
   useEffect,
   useRef,
+  useState,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
 } from 'react'
 import { Check, Trash2 } from 'lucide-react'
+import { cx } from '../lib/utils'
 
 interface Props {
   onComplete: () => void
@@ -24,6 +26,9 @@ const MAX_PULL = 116
  * dnd-kit wrapper is active.
  */
 export function SwipeableTask({ onComplete, onDelete, children }: Props) {
+  const [direction, setDirection] = useState<'complete' | 'delete' | null>(
+    null,
+  )
   const contentRef = useRef<HTMLDivElement>(null)
   const gesture = useRef({
     id: -1,
@@ -62,6 +67,7 @@ export function SwipeableTask({ onComplete, onDelete, children }: Props) {
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (event.pointerType === 'mouse' || !event.isPrimary) return
     if (contentRef.current?.closest('[data-dragging="true"]')) return
+    setDirection(null)
     gesture.current = {
       id: event.pointerId,
       startX: event.clientX,
@@ -78,6 +84,7 @@ export function SwipeableTask({ onComplete, onDelete, children }: Props) {
     if (contentRef.current?.closest('[data-dragging="true"]')) {
       current.active = false
       current.swiping = false
+      setDirection(null)
       clearTransform(true)
       return
     }
@@ -95,6 +102,10 @@ export function SwipeableTask({ onComplete, onDelete, children }: Props) {
     const pulled =
       abs <= MAX_PULL ? abs : MAX_PULL + (abs - MAX_PULL) * 0.3
     current.dx = Math.sign(dx) * pulled
+    const nextDirection = dx >= 0 ? 'complete' : 'delete'
+    setDirection((previous) =>
+      previous === nextDirection ? previous : nextDirection,
+    )
     const element = contentRef.current
     if (element) {
       element.style.transition = 'none'
@@ -114,6 +125,7 @@ export function SwipeableTask({ onComplete, onDelete, children }: Props) {
     }
 
     if (!swiped) return
+    setDirection(null)
     suppressNextClick()
     if (dx >= COMPLETE_AT) {
       clearTransform(false)
@@ -129,6 +141,7 @@ export function SwipeableTask({ onComplete, onDelete, children }: Props) {
   const handlePointerCancel = (): void => {
     gesture.current.active = false
     gesture.current.swiping = false
+    setDirection(null)
     clearTransform(true)
   }
 
@@ -140,11 +153,20 @@ export function SwipeableTask({ onComplete, onDelete, children }: Props) {
 
   return (
     <div className="swipe-row">
-      <div className="swipe-bg swipe-bg-complete" aria-hidden="true">
-        <Check size={20} strokeWidth={3} />
-      </div>
-      <div className="swipe-bg swipe-bg-delete" aria-hidden="true">
-        <Trash2 size={19} />
+      <div
+        className={cx(
+          'swipe-bg',
+          direction === 'delete'
+            ? 'swipe-bg-delete'
+            : 'swipe-bg-complete',
+        )}
+        aria-hidden="true"
+      >
+        {direction === 'delete' ? (
+          <Trash2 size={19} />
+        ) : (
+          <Check size={20} strokeWidth={3} />
+        )}
       </div>
       <div
         ref={contentRef}
