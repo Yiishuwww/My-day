@@ -1,18 +1,23 @@
-import { Inbox, Plus, Settings, SunMedium, Timer } from 'lucide-react'
+import {
+  CalendarDays,
+  Inbox,
+  Settings,
+  SunMedium,
+  Timer,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cx } from '../lib/utils'
 
-export type Tab = 'today' | 'inbox' | 'focus' | 'settings'
+export type Tab = 'today' | 'calendar' | 'inbox' | 'focus' | 'settings'
 
 interface Props {
   active: Tab
   onChange: (tab: Tab) => void
-  onCreate: () => void
 }
 
 const BEFORE: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
-  { key: 'today', label: '今日', icon: SunMedium },
   { key: 'inbox', label: '收件箱', icon: Inbox },
+  { key: 'calendar', label: '日历', icon: CalendarDays },
 ]
 
 const AFTER: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
@@ -20,7 +25,7 @@ const AFTER: Array<{ key: Tab; label: string; icon: LucideIcon }> = [
   { key: 'settings', label: '设置', icon: Settings },
 ]
 
-export function TabBar({ active, onChange, onCreate }: Props) {
+export function TabBar({ active, onChange }: Props) {
   const renderTab = ({
     key,
     label,
@@ -48,14 +53,18 @@ export function TabBar({ active, onChange, onCreate }: Props) {
         {BEFORE.map(renderTab)}
         <button
           type="button"
-          className="tab-create"
-          onClick={onCreate}
-          aria-label="新建任务"
-          title="新建任务"
+          className={cx('tab', 'tab-home', active === 'today' && 'active')}
+          onClick={() => onChange('today')}
+          aria-current={active === 'today' ? 'page' : undefined}
+          aria-label="今日"
         >
-          <span className="tab-create-inner">
-            <Plus size={24} strokeWidth={2.4} />
+          <span className="tab-home-icon">
+            <SunMedium
+              size={22}
+              strokeWidth={active === 'today' ? 2.3 : 2}
+            />
           </span>
+          <span>今日</span>
         </button>
         {AFTER.map(renderTab)}
       </div>

@@ -20,7 +20,7 @@ const page = await context.newPage()
 page.on('pageerror', (error) => console.error('PAGE ERROR:', error.message))
 
 async function addTask(title) {
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.title-input').fill(title)
   await page.locator('.sheet .primary-btn').click()
   await page.locator('.sheet').waitFor({ state: 'hidden' })
@@ -191,7 +191,7 @@ try {
   await page.locator('.tab', { hasText: '收件箱' }).click()
   await page.locator('.inbox-view').waitFor()
   for (const title of ['收件A', '收件B']) {
-    await page.locator('.tab-create').click()
+    await page.locator('.fab').click()
     await page.locator('.title-input').fill(title)
     await page.locator('.sheet .primary-btn').click()
     await page.locator('.sheet').waitFor({ state: 'hidden' })

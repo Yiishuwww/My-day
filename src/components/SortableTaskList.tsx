@@ -2,10 +2,12 @@ import {
   useCallback,
   useEffect,
   useRef,
+  useState,
   type ComponentProps,
 } from 'react'
 import {
   DndContext,
+  DragOverlay,
   MouseSensor,
   TouchSensor,
   closestCenter,
@@ -13,6 +15,7 @@ import {
   useSensors,
   type CollisionDetection,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -86,6 +89,11 @@ function SortableTask({
  * Today and Inbox share this behavior.
  */
 export function SortableTaskList({ tasks, onReorder, itemProps }: Props) {
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const activeTask = tasks.find((task) => task.id === activeId)
+  const overlayProps = { ...itemProps }
+  delete overlayProps.onDelete
+
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, {
@@ -108,7 +116,12 @@ export function SortableTaskList({ tasks, onReorder, itemProps }: Props) {
     })
   }, [])
 
+  const handleDragStart = (event: DragStartEvent): void => {
+    setActiveId(String(event.active.id))
+  }
+
   const handleDragEnd = (event: DragEndEvent): void => {
+    setActiveId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
     const source = tasks.find((task) => task.id === active.id)
@@ -130,6 +143,8 @@ export function SortableTaskList({ tasks, onReorder, itemProps }: Props) {
       sensors={sensors}
       collisionDetection={collisionDetection}
       modifiers={[restrictToVerticalAxis]}
+      onDragStart={handleDragStart}
+      onDragCancel={() => setActiveId(null)}
       onDragEnd={handleDragEnd}
     >
       <SortableContext
@@ -142,6 +157,13 @@ export function SortableTaskList({ tasks, onReorder, itemProps }: Props) {
           ))}
         </div>
       </SortableContext>
+      <DragOverlay dropAnimation={null}>
+        {activeTask ? (
+          <div className="drag-overlay">
+            <TaskItem task={activeTask} {...overlayProps} />
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   )
 }

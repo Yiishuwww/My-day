@@ -23,7 +23,7 @@ try {
   await page.goto(baseURL, { waitUntil: 'networkidle' })
   await page.locator('.today-view').waitFor()
 
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.title-input').fill('深色测试任务')
   await page.locator('.notes-input').fill('深色模式下的备注预览。')
   await page.locator('.time-input').fill('10:00')
@@ -58,7 +58,7 @@ try {
   await page.locator('.back-btn').click()
   await page.locator('.back-btn').click()
 
-  await page.locator('.hero-calendar').click()
+  await page.locator('.tab', { hasText: '日历' }).click()
   await page.locator('.calendar-view').waitFor()
   await page.locator('.cal-expand').click()
   await page.locator('.month-grid').waitFor()

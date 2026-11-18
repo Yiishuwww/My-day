@@ -50,7 +50,7 @@ async function saveSheet() {
 
 async function addTodayTask(title, options = {}) {
   await page.locator('.tab', { hasText: '今日' }).click()
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.sheet').waitFor({ state: 'visible' })
   await page.locator('.title-input').fill(title)
   if (options.notes) await page.locator('.notes-input').fill(options.notes)
@@ -120,7 +120,7 @@ try {
 
   // Create an inbox task
   await page.locator('.tab', { hasText: '收件箱' }).click()
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.title-input').fill('收件任务')
   await saveSheet()
   await page.locator('.inbox-view').getByText('收件任务').waitFor()

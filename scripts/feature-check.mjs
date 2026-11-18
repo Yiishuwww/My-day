@@ -39,7 +39,7 @@ const shot = async (name) => {
 }
 
 async function openNewTask() {
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.sheet').waitFor({ state: 'visible' })
 }
 
@@ -156,10 +156,11 @@ try {
   log('Date-range tasks show daily and mark the last day without rollover')
 
   // Calendar contains the past instance; complete it so it becomes history
-  await page.locator('.hero-calendar').click()
+  await page.locator('.tab', { hasText: '日历' }).click()
   await page.locator('.calendar-view').waitFor()
   await page.locator(`.day-cell[data-date="${dates.yesterday}"]`).click()
   await page.waitForTimeout(180)
+  await page.locator('.day-view-btn', { hasText: '列表' }).click()
   const yesterdayPanel = await page.locator('.day-panel').innerText()
   if (!yesterdayPanel.includes('晨间跑步')) {
     fail('Past range instance missing from calendar')
@@ -208,10 +209,11 @@ try {
   }
 
   // The completed yesterday instance keeps its old title
-  await page.locator('.hero-calendar').click()
+  await page.locator('.tab', { hasText: '日历' }).click()
   await page.locator('.calendar-view').waitFor()
   await page.locator(`.day-cell[data-date="${dates.yesterday}"]`).click()
   await page.waitForTimeout(150)
+  await page.locator('.day-view-btn', { hasText: '列表' }).click()
   const doneToggle = page
     .locator('.day-panel .done-toggle')
     .filter({ hasText: '已完成' })
@@ -324,7 +326,7 @@ try {
 
   // D. Calendar expand / collapse
   await page.locator('.tab', { hasText: '今日' }).click()
-  await page.locator('.hero-calendar').click()
+  await page.locator('.tab', { hasText: '日历' }).click()
   await page.locator('.calendar-view').waitFor()
   const todayButton = page.locator('.today-btn')
   if (await todayButton.isEnabled()) await todayButton.click()
@@ -426,6 +428,16 @@ try {
   }
   await focusCard.locator('.task-timer').click()
   await page.locator('.focus-view').waitFor()
+
+  await page.locator('.focus-info').click()
+  await page.locator('.focus-hint-card').waitFor()
+  const focusHint = await page.locator('.focus-hint-card').innerText()
+  if (!focusHint.includes('锁屏')) {
+    fail(`Focus hint missing lock-screen note: ${focusHint}`)
+  }
+  await page.locator('.focus-info').click()
+  await page.locator('.focus-hint-card').waitFor({ state: 'hidden' })
+
   const running = await page.locator('.focus-status').innerText()
   if (running !== '专注中') fail(`Focus did not start: ${running}`)
   await shot('feature-focus-running')

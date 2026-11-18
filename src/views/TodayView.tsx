@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
-  CalendarDays,
   CalendarPlus,
   Check,
   ChevronDown,
@@ -45,7 +44,6 @@ interface Props {
   onQuickSchedule: (task: Task, date: string) => void
   onDelete: (task: Task) => void
   onSearch: () => void
-  onOpenCalendar: () => void
   habits: Habit[]
   onToggleHabit: (habit: Habit, date: string) => void
   onOpenReview: () => void
@@ -63,7 +61,6 @@ export function TodayView({
   onQuickSchedule,
   onDelete,
   onSearch,
-  onOpenCalendar,
   habits,
   onToggleHabit,
   onOpenReview,
@@ -157,15 +154,6 @@ export function TodayView({
             <h1>{greeting()}</h1>
           </div>
           <div className="hero-actions">
-            <button
-              type="button"
-              className="hero-icon hero-calendar"
-              onClick={onOpenCalendar}
-              aria-label="打开日历"
-              title="日历"
-            >
-              <CalendarDays size={19} />
-            </button>
             <button
               type="button"
               className="hero-icon search-toggle"

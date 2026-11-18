@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Clock,
-  Flag,
   List,
   Plus,
+  Repeat,
 } from 'lucide-react'
 import type { Task } from '../types'
 import { TaskItem } from '../components/TaskItem'
@@ -18,7 +17,6 @@ import {
   addDaysKey,
   addMonthsKey,
   humanDateWithWeekday,
-  humanDuration,
   monthLabel,
   relativeDayLabel,
   sortTasks,
@@ -38,18 +36,23 @@ interface Props {
   onFocus: (task: Task) => void
   onTagClick: (tag: string) => void
   onNew: (date: string) => void
-  onBack: () => void
 }
 
 type DayView = 'list' | 'timeline'
 
-const EXPANDED_KEY = 'myday.calendar.expanded'
-const VIEW_KEY = 'myday.calendar.dayView'
 const DEFAULT_START_HOUR = 8
 const DEFAULT_END_HOUR = 20
+const HOUR_HEIGHT = 52
+const GRID_TOP = 12
 
-function timeToHour(time: string): number {
-  return Number(time.slice(0, 2))
+interface LaidOutEvent {
+  task: Task
+  start: number
+  end: number
+  column: number
+  columns: number
+  top: number
+  height: number
 }
 
 function timeToMinutes(time: string): number {
@@ -57,53 +60,75 @@ function timeToMinutes(time: string): number {
   return hours * 60 + minutes
 }
 
-function TimelineTask({
-  task,
-  onToggle,
-  onEdit,
-}: {
-  task: Task
-  onToggle: (task: Task) => void
-  onEdit: (task: Task) => void
-}) {
-  return (
-    <div className="timeline-task">
-      <button
-        type="button"
-        className="timeline-check"
-        onClick={() => onToggle(task)}
-        role="checkbox"
-        aria-checked={false}
-        aria-label={`完成任务：${task.title}`}
-      >
-        <span className="check-circle" />
-      </button>
-      <button
-        type="button"
-        className="timeline-main"
-        onClick={() => onEdit(task)}
-        aria-label={`编辑任务：${task.title}`}
-      >
-        <span className="timeline-title-row">
-          {task.priority > 0 && (
-            <Flag
-              size={11}
-              className={cx(
-                'priority-flag',
-                task.priority === 2 ? 'high' : 'medium',
-              )}
-              fill="currentColor"
-            />
-          )}
-          <span className="timeline-title">{task.title}</span>
-        </span>
-        <span className="timeline-meta">
-          {task.time}
-          {task.duration ? ` · ${humanDuration(task.duration)}` : ''}
-        </span>
-      </button>
-    </div>
-  )
+function minutesToTime(minutes: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, minutes))
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(
+    clamped % 60,
+  ).padStart(2, '0')}`
+}
+
+function eventDuration(task: Task): number {
+  return task.duration && task.duration > 0 ? task.duration : 30
+}
+
+function layoutTimelineEvents(
+  tasks: Task[],
+  startHour: number,
+  endHour: number,
+): LaidOutEvent[] {
+  const maxMinutes = (endHour + 1) * 60
+  const sorted = tasks
+    .filter((task) => Boolean(task.time))
+    .map((task) => {
+      const start = timeToMinutes(task.time as string)
+      return {
+        task,
+        start,
+        end: Math.min(start + eventDuration(task), maxMinutes),
+      }
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+
+  const laidOut: LaidOutEvent[] = []
+  let cluster: Array<{ task: Task; start: number; end: number }> = []
+  let clusterEnd = -1
+
+  const flush = (): void => {
+    if (!cluster.length) return
+    const columnEnds: number[] = []
+    const placed = cluster.map((event) => {
+      let column = columnEnds.findIndex((end) => end <= event.start)
+      if (column === -1) {
+        column = columnEnds.length
+        columnEnds.push(event.end)
+      } else {
+        columnEnds[column] = event.end
+      }
+      return { ...event, column }
+    })
+    const columns = Math.max(1, columnEnds.length)
+    for (const event of placed) {
+      laidOut.push({
+        ...event,
+        columns,
+        top: ((event.start - startHour * 60) / 60) * HOUR_HEIGHT,
+        height: Math.max(
+          24,
+          ((event.end - event.start) / 60) * HOUR_HEIGHT - 2,
+        ),
+      })
+    }
+    cluster = []
+    clusterEnd = -1
+  }
+
+  for (const event of sorted) {
+    if (cluster.length && event.start >= clusterEnd) flush()
+    cluster.push(event)
+    clusterEnd = Math.max(clusterEnd, event.end)
+  }
+  flush()
+  return laidOut
 }
 
 export function CalendarView({
@@ -116,22 +141,13 @@ export function CalendarView({
   onFocus,
   onTagClick,
   onNew,
-  onBack,
 }: Props) {
   const today = todayKey()
   const weekStart = startOfWeekKey(selectedDate)
   const [showDone, setShowDone] = useState(false)
-  const [expanded, setExpanded] = useState(
-    () => localStorage.getItem(EXPANDED_KEY) === '1',
-  )
-  const [view, setView] = useState<DayView>(() =>
-    localStorage.getItem(VIEW_KEY) === 'timeline' ? 'timeline' : 'list',
-  )
+  const [expanded, setExpanded] = useState(false)
+  const [view, setView] = useState<DayView>('timeline')
   const [now, setNow] = useState(() => new Date())
-
-  useEffect(() => {
-    localStorage.setItem(EXPANDED_KEY, expanded ? '1' : '0')
-  }, [expanded])
 
   useEffect(() => {
     if (view !== 'timeline' || selectedDate !== today) return
@@ -151,39 +167,29 @@ export function CalendarView({
     () => sortTasks(dayTasks.filter((task) => task.completed)),
     [dayTasks],
   )
-
-  const timedOpen = useMemo(
-    () => open.filter((task) => Boolean(task.time)),
-    [open],
+  const timedTasks = useMemo(
+    () => dayTasks.filter((task) => Boolean(task.time)),
+    [dayTasks],
   )
-  const untimedOpen = useMemo(
-    () => open.filter((task) => !task.time),
-    [open],
+  const untimedTasks = useMemo(
+    () => dayTasks.filter((task) => !task.time),
+    [dayTasks],
   )
-  const tasksByHour = useMemo(() => {
-    const groups = new Map<number, Task[]>()
-    for (const task of timedOpen) {
-      const hour = timeToHour(task.time as string)
-      const list = groups.get(hour) ?? []
-      list.push(task)
-      groups.set(hour, list)
-    }
-    for (const list of groups.values()) {
-      list.sort(
-        (a, b) =>
-          timeToMinutes(a.time as string) - timeToMinutes(b.time as string),
-      )
-    }
-    return groups
-  }, [timedOpen])
 
   const nowHour = now.getHours()
-  const hourValues = timedOpen.map((task) => timeToHour(task.time as string))
+  const eventStartHours = timedTasks.map((task) =>
+    Math.floor(timeToMinutes(task.time as string) / 60),
+  )
+  const eventEndHours = timedTasks.map((task) =>
+    Math.ceil(
+      (timeToMinutes(task.time as string) + eventDuration(task)) / 60,
+    ),
+  )
   const startHour = Math.max(
     0,
     Math.min(
       DEFAULT_START_HOUR,
-      ...hourValues,
+      ...eventStartHours,
       selectedDate === today ? nowHour : DEFAULT_START_HOUR,
     ),
   )
@@ -191,7 +197,7 @@ export function CalendarView({
     23,
     Math.max(
       DEFAULT_END_HOUR,
-      ...hourValues,
+      ...eventEndHours,
       selectedDate === today ? nowHour : DEFAULT_END_HOUR,
     ),
   )
@@ -199,9 +205,20 @@ export function CalendarView({
     { length: endHour - startHour + 1 },
     (_, index) => startHour + index,
   )
-  const nowLabel = `现在 ${String(now.getHours()).padStart(2, '0')}:${String(
-    now.getMinutes(),
-  ).padStart(2, '0')}`
+  const timelineHeight = GRID_TOP + hours.length * HOUR_HEIGHT
+  const laidOutEvents = useMemo(
+    () => layoutTimelineEvents(timedTasks, startHour, endHour),
+    [timedTasks, startHour, endHour],
+  )
+
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const showNow =
+    selectedDate === today &&
+    nowMinutes >= startHour * 60 &&
+    nowMinutes <= endHour * 60 + 59
+  const nowTop =
+    GRID_TOP + ((nowMinutes - startHour * 60) / 60) * HOUR_HEIGHT
+  const nowLabel = `现在 ${minutesToTime(nowMinutes)}`
 
   const relative = relativeDayLabel(selectedDate)
   const countLabel =
@@ -218,21 +235,12 @@ export function CalendarView({
   const changeView = (next: DayView): void => {
     setView(next)
     setNow(new Date())
-    localStorage.setItem(VIEW_KEY, next)
   }
 
   return (
     <div className="view calendar-view">
-      <header className="tags-head calendar-head">
-        <button
-          type="button"
-          className="back-btn"
-          onClick={onBack}
-          aria-label="返回"
-        >
-          <ArrowLeft size={19} />
-        </button>
-        <div className="tags-title">
+      <header className="page-head">
+        <div>
           <p className="eyebrow">计划</p>
           <h1>日历</h1>
         </div>
@@ -312,7 +320,7 @@ export function CalendarView({
           <span className="count-pill">{countLabel}</span>
         </div>
 
-        {open.length > 0 && (
+        {dayTasks.length > 0 && (
           <div className="day-view-switch" role="group" aria-label="任务显示方式">
             <button
               type="button"
@@ -335,7 +343,7 @@ export function CalendarView({
           </div>
         )}
 
-        {open.length > 0 && view === 'list' && (
+        {view === 'list' && open.length > 0 && (
           <div className="task-list">
             {open.map((task) => (
               <TaskItem
@@ -351,60 +359,114 @@ export function CalendarView({
           </div>
         )}
 
-        {open.length > 0 && view === 'timeline' && (
-          <div className="day-timeline">
-            {untimedOpen.length > 0 && (
-              <div className="timeline-untimed">
-                <p className="timeline-untimed-label">未安排时间</p>
-                <div className="task-list">
-                  {untimedOpen.map((task) => (
-                    <TaskItem
-                      key={task.id}
-                      task={task}
-                      onToggle={onToggle}
-                      onToggleSubtask={onToggleSubtask}
-                      onOpen={onEdit}
-                      onFocus={onFocus}
-                      onTagClick={onTagClick}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+        {view === 'timeline' && timedTasks.length > 0 && (
+          <div
+            className="timeline-calendar"
+            style={{ height: timelineHeight }}
+          >
+            <div className="timeline-rail" aria-hidden="true">
+              {hours.map((hour, index) => (
+                <span
+                  className="timeline-hour-label"
+                  key={hour}
+                  style={{ top: GRID_TOP + index * HOUR_HEIGHT }}
+                >
+                  {String(hour).padStart(2, '0')}:00
+                </span>
+              ))}
+            </div>
 
-            {timedOpen.length > 0 && (
-              <div className="timeline-hours">
-                {hours.map((hour) => {
-                  const list = tasksByHour.get(hour) ?? []
-                  const showNow =
-                    selectedDate === today &&
-                    hour === nowHour &&
-                    nowHour >= startHour &&
-                    nowHour <= endHour
-                  return (
-                    <div className="timeline-hour" key={hour}>
-                      <span className="timeline-hour-label">
-                        {String(hour).padStart(2, '0')}:00
-                      </span>
-                      <div className="timeline-slot">
-                        {list.map((task) => (
-                          <TimelineTask
-                            key={task.id}
-                            task={task}
-                            onToggle={onToggle}
-                            onEdit={onEdit}
-                          />
-                        ))}
-                        {showNow && (
-                          <span className="timeline-now">{nowLabel}</span>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            <div className="timeline-canvas">
+              {hours.map((hour, index) => (
+                <span
+                  className="timeline-hour-line"
+                  key={hour}
+                  style={{ top: GRID_TOP + index * HOUR_HEIGHT }}
+                />
+              ))}
+
+              {laidOutEvents.map(({ task, column, columns, top, height }) => {
+                const endLabel = minutesToTime(
+                  timeToMinutes(task.time as string) + eventDuration(task),
+                )
+                const timeLabel = `${task.time}${
+                  task.duration ? `–${endLabel}` : ''
+                }`
+                const compact = height < 44
+                return (
+                  <button
+                    type="button"
+                    key={task.id}
+                    className={cx(
+                      'cal-event',
+                      compact && 'is-compact',
+                      task.completed && 'is-done',
+                    )}
+                    style={{
+                      top: GRID_TOP + top,
+                      height,
+                      left: `calc(${(column / columns) * 100}% + 2px)`,
+                      width: `calc(${100 / columns}% - 4px)`,
+                    }}
+                    onClick={() => onEdit(task)}
+                    aria-label={`编辑日程：${task.title}`}
+                    title={`${task.title} · ${timeLabel}`}
+                  >
+                    <span
+                      className={cx(
+                        'cal-event-title-row',
+                        compact && 'is-compact',
+                      )}
+                    >
+                      <span className="cal-event-title">{task.title}</span>
+                      {compact ? (
+                        <span className="cal-event-time-inline">
+                          {timeLabel}
+                        </span>
+                      ) : (
+                        task.recurrence && (
+                          <Repeat size={10} className="cal-event-repeat" />
+                        )
+                      )}
+                    </span>
+                    {!compact && (
+                      <span className="cal-event-time">{timeLabel}</span>
+                    )}
+                  </button>
+                )
+              })}
+
+              {showNow && (
+                <span
+                  className="timeline-now-line"
+                  style={{ top: nowTop }}
+                  aria-hidden="true"
+                >
+                  <span className="timeline-now-label">{nowLabel}</span>
+                </span>
+              )}
+            </div>
           </div>
+        )}
+
+        {view === 'timeline' &&
+          dayTasks.length > 0 &&
+          timedTasks.length === 0 && (
+            <div className="timeline-empty">
+              <Clock size={16} />
+              这一天没有带时间的安排
+            </div>
+          )}
+
+        {view === 'timeline' && untimedTasks.length > 0 && (
+          <button
+            type="button"
+            className="timeline-list-link"
+            onClick={() => changeView('list')}
+          >
+            <List size={14} />
+            {untimedTasks.length} 个未安排时间的任务
+          </button>
         )}
 
         {dayTasks.length === 0 && (

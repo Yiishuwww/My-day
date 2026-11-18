@@ -45,6 +45,7 @@ export function FocusView({
   const [minutes, setMinutes] = useState(() =>
     Math.max(1, Math.round(session.durationSec / 60)),
   )
+  const [showHint, setShowHint] = useState(false)
 
   useEffect(() => {
     if (session.status !== 'running') return
@@ -97,10 +98,26 @@ export function FocusView({
 
   return (
     <div className="view focus-view">
-      <header className="page-head">
+      <header className="page-head focus-head">
         <div>
           <p className="eyebrow">专注</p>
-          <h1>番茄钟</h1>
+          <div className="focus-title-row">
+            <h1>番茄钟</h1>
+            <button
+              type="button"
+              className={cx('focus-info', showHint && 'active')}
+              onClick={() => setShowHint((value) => !value)}
+              aria-label="计时说明"
+              aria-expanded={showHint}
+            >
+              !
+            </button>
+          </div>
+          {showHint && (
+            <p className="focus-hint-card">
+              保持 App 打开时计时最准确；锁屏或切到后台后，网页计时会被系统暂停，重新打开时会按真实时间校正，但无法在锁屏时响铃。
+            </p>
+          )}
         </div>
       </header>
 
@@ -263,10 +280,6 @@ export function FocusView({
           </p>
         )}
       </section>
-
-      <p className="focus-hint">
-        保持 App 打开时计时最准确；锁屏或切到后台后，网页计时会被系统暂停，重新打开时会按真实时间校正，但无法在锁屏时响铃。
-      </p>
     </div>
   )
 }

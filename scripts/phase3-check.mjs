@@ -69,7 +69,7 @@ async function addHabit(name, schedule = null, customDays = null) {
 }
 
 async function completeTodayTask(title) {
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.title-input').fill(title)
   await page.locator('.sheet .primary-btn').click()
   await page.locator('.sheet').waitFor({ state: 'hidden' })
@@ -222,7 +222,7 @@ try {
   }
 
   // Focus history logging and focus heatmap metric
-  await page.locator('.tab-create').click()
+  await page.locator('.fab').click()
   await page.locator('.title-input').fill('专注统计')
   await page.locator('.time-input').fill('08:00')
   await page.locator('.duration-custom input').fill('1')
