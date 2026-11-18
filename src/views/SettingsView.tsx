@@ -185,7 +185,6 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>标签管理</strong>
-              <small>重命名、删除标签，或按标签查看任务</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -199,7 +198,6 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>习惯与统计</strong>
-              <small>习惯打卡、连续天数和完成热力图</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -213,7 +211,7 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>最近删除</strong>
-              <small>误删的任务保留 30 天，可随时恢复</small>
+              <small>保留 30 天</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -249,7 +247,6 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>导出备份</strong>
-              <small>JSON 文件，包含全部任务</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -264,7 +261,7 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>导入备份</strong>
-              <small>从 JSON 文件恢复，会覆盖当前数据</small>
+              <small>会覆盖当前数据</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -279,7 +276,6 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>导出日历</strong>
-              <small>生成 .ics，可导入苹果日历</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -294,7 +290,7 @@ export function SettingsView({
             </span>
             <span className="setting-text">
               <strong>清空数据</strong>
-              <small>删除本机上的所有任务，无法撤销</small>
+              <small>无法撤销</small>
             </span>
             <ChevronRight size={16} className="chev" />
           </button>
@@ -308,10 +304,6 @@ export function SettingsView({
           </span>
           {needsBackup && <strong>建议现在导出一份</strong>}
         </div>
-
-        <p className="settings-note">
-          数据只保存在这台设备的浏览器里。换手机或清理 Safari 数据前，记得先导出备份。
-        </p>
       </section>
 
       <section className="settings-group">
@@ -321,12 +313,8 @@ export function SettingsView({
             <span className="about-logo">✓</span>
             <div>
               <strong>今日</strong>
-              <small>待办 · 日历 · 只属于你</small>
             </div>
           </div>
-          <p>
-            一个本地优先的小工具，帮你把想做的事放进时间里。所有数据只保存在本机，不会上传到任何服务器。
-          </p>
           <span className="version">v1.0.0</span>
         </div>
       </section>

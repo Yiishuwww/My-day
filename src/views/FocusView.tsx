@@ -101,7 +101,6 @@ export function FocusView({
         <div>
           <p className="eyebrow">专注</p>
           <h1>番茄钟</h1>
-          <p className="page-sub">留一段时间，只做一件事。</p>
         </div>
       </header>
 

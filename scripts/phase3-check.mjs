@@ -69,7 +69,7 @@ async function addHabit(name, schedule = null, customDays = null) {
 }
 
 async function completeTodayTask(title) {
-  await page.locator('.fab').click()
+  await page.locator('.tab-create').click()
   await page.locator('.title-input').fill(title)
   await page.locator('.sheet .primary-btn').click()
   await page.locator('.sheet').waitFor({ state: 'hidden' })
@@ -117,11 +117,11 @@ try {
     await row.locator('.habit-row-check.checked').waitFor()
   }
   const habitStat = page
-    .locator('.review-stat')
-    .filter({ hasText: '今日习惯' })
+    .locator('.weekly-metric')
+    .filter({ hasText: '习惯完成' })
     .locator('strong')
   await page.waitForTimeout(250)
-  if ((await habitStat.innerText()) !== '3/3') {
+  if ((await habitStat.innerText()) !== '100%') {
     fail(`Habit summary wrong: ${await habitStat.innerText()}`)
   }
   const waterMeta = await page
@@ -155,8 +155,8 @@ try {
     .click()
   await page.locator('.review-view').waitFor()
   const completedStat = page
-    .locator('.review-stat')
-    .filter({ hasText: '今日完成' })
+    .locator('.weekly-metric')
+    .filter({ hasText: '完成任务' })
     .locator('strong')
   if ((await completedStat.innerText()) !== '1') {
     fail(`Completed stat wrong: ${await completedStat.innerText()}`)
@@ -222,7 +222,7 @@ try {
   }
 
   // Focus history logging and focus heatmap metric
-  await page.locator('.fab').click()
+  await page.locator('.tab-create').click()
   await page.locator('.title-input').fill('专注统计')
   await page.locator('.time-input').fill('08:00')
   await page.locator('.duration-custom input').fill('1')
@@ -250,8 +250,8 @@ try {
     .click()
   await page.locator('.review-view').waitFor()
   const focusStat = page
-    .locator('.review-stat')
-    .filter({ hasText: '本周专注分钟' })
+    .locator('.weekly-metric')
+    .filter({ hasText: '专注分钟' })
     .locator('strong')
   await page.waitForTimeout(300)
   if (Number(await focusStat.innerText()) < 1) {

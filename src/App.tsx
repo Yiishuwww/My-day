@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Plus } from 'lucide-react'
 import {
   db,
   moveTasksToDate,
@@ -34,6 +33,7 @@ type SpecialView =
   | { kind: 'trash' }
   | { kind: 'search' }
   | { kind: 'review' }
+  | { kind: 'calendar' }
   | null
 
 interface ToastAction {
@@ -243,6 +243,25 @@ export default function App() {
     [notify],
   )
 
+  const handleTrashTask = useCallback(
+    (task: Task) => {
+      void trashTasks([task.id])
+        .then((moved) => {
+          if (!moved.length) return
+          notify('已移到最近删除', {
+            label: '撤销',
+            onClick: () => {
+              void restoreTrashEntries([task.id]).then((count) => {
+                notify(count ? '已恢复任务' : '任务已不存在')
+              })
+            },
+          })
+        })
+        .catch(() => notify('删除失败，请再试一次'))
+    },
+    [notify],
+  )
+
   const handleBulkReschedule = useCallback(
     (items: Task[], date: string | null) => {
       const targets = items.filter(
@@ -285,9 +304,28 @@ export default function App() {
     setSpecialView({ kind: 'search' })
   }, [])
 
+  const handleOpenCalendar = useCallback(() => {
+    setSpecialView({ kind: 'calendar' })
+  }, [])
+
   const handleOpenReview = useCallback(() => {
     setSpecialView({ kind: 'review' })
   }, [])
+
+  const handleTabChange = useCallback((next: Tab) => {
+    setSpecialView(null)
+    setTab(next)
+  }, [])
+
+  const handleCreate = useCallback(() => {
+    if (specialView?.kind === 'calendar') {
+      openNew({ date: selectedDate })
+    } else if (tab === 'inbox') {
+      openNew()
+    } else {
+      openNew({ date: todayKey() })
+    }
+  }, [openNew, selectedDate, specialView, tab])
 
   const handleToggleHabit = useCallback(
     (habit: Habit, date: string) => {
@@ -374,7 +412,29 @@ export default function App() {
 
   return (
     <div className="app">
-      {specialView?.kind === 'tags' ? (
+      {specialView?.kind === 'calendar' ? (
+        <>
+          <main className="app-main">
+            <CalendarView
+              tasks={tasks}
+              selectedDate={selectedDate}
+              onSelectDate={setSelectedDate}
+              onToggle={handleToggle}
+              onToggleSubtask={handleToggleSubtask}
+              onEdit={openEdit}
+              onFocus={handleStartFocus}
+              onTagClick={handleTagClick}
+              onNew={(date) => openNew({ date })}
+              onBack={() => setSpecialView(null)}
+            />
+          </main>
+          <TabBar
+            active="today"
+            onChange={handleTabChange}
+            onCreate={handleCreate}
+          />
+        </>
+      ) : specialView?.kind === 'tags' ? (
         <main className="app-main">
           <TagsView
             key={specialView.tag ?? 'all-tags'}
@@ -427,24 +487,12 @@ export default function App() {
                 onFocus={handleStartFocus}
                 onTagClick={handleTagClick}
                 onQuickSchedule={handleQuickSchedule}
+                onDelete={handleTrashTask}
                 onSearch={handleOpenSearch}
+                onOpenCalendar={handleOpenCalendar}
                 habits={habits}
                 onToggleHabit={handleToggleHabit}
                 onOpenReview={handleOpenReview}
-              />
-            )}
-
-            {tab === 'calendar' && (
-              <CalendarView
-                tasks={tasks}
-                selectedDate={selectedDate}
-                onSelectDate={setSelectedDate}
-                onToggle={handleToggle}
-                onToggleSubtask={handleToggleSubtask}
-                onEdit={openEdit}
-                onFocus={handleStartFocus}
-                onTagClick={handleTagClick}
-                onNew={(date) => openNew({ date })}
               />
             )}
 
@@ -457,6 +505,7 @@ export default function App() {
                 onFocus={handleStartFocus}
                 onTagClick={handleTagClick}
                 onQuickSchedule={handleQuickSchedule}
+                onDelete={handleTrashTask}
                 onNew={() => openNew()}
               />
             )}
@@ -485,22 +534,11 @@ export default function App() {
             )}
           </main>
 
-          <TabBar active={tab} onChange={setTab} />
-
-          {tab !== 'settings' && tab !== 'focus' && (
-            <button
-              type="button"
-              className="fab"
-              aria-label="新建任务"
-              onClick={() => {
-                if (tab === 'calendar') openNew({ date: selectedDate })
-                else if (tab === 'today') openNew({ date: todayKey() })
-                else openNew()
-              }}
-            >
-              <Plus size={26} />
-            </button>
-          )}
+          <TabBar
+            active={tab}
+            onChange={handleTabChange}
+            onCreate={handleCreate}
+          />
         </>
       )}
 

@@ -39,7 +39,7 @@ const shot = async (name) => {
 }
 
 async function openNewTask() {
-  await page.locator('.fab').click()
+  await page.locator('.tab-create').click()
   await page.locator('.sheet').waitFor({ state: 'visible' })
 }
 
@@ -156,7 +156,8 @@ try {
   log('Date-range tasks show daily and mark the last day without rollover')
 
   // Calendar contains the past instance; complete it so it becomes history
-  await page.locator('.tab', { hasText: '日历' }).click()
+  await page.locator('.hero-calendar').click()
+  await page.locator('.calendar-view').waitFor()
   await page.locator(`.day-cell[data-date="${dates.yesterday}"]`).click()
   await page.waitForTimeout(180)
   const yesterdayPanel = await page.locator('.day-panel').innerText()
@@ -207,7 +208,8 @@ try {
   }
 
   // The completed yesterday instance keeps its old title
-  await page.locator('.tab', { hasText: '日历' }).click()
+  await page.locator('.hero-calendar').click()
+  await page.locator('.calendar-view').waitFor()
   await page.locator(`.day-cell[data-date="${dates.yesterday}"]`).click()
   await page.waitForTimeout(150)
   const doneToggle = page
@@ -321,7 +323,9 @@ try {
   log('Tag filter, rename and delete work; Settings entry works')
 
   // D. Calendar expand / collapse
-  await page.locator('.tab', { hasText: '日历' }).click()
+  await page.locator('.tab', { hasText: '今日' }).click()
+  await page.locator('.hero-calendar').click()
+  await page.locator('.calendar-view').waitFor()
   const todayButton = page.locator('.today-btn')
   if (await todayButton.isEnabled()) await todayButton.click()
   await page.locator('.cal-expand').click()

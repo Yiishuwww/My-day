@@ -1,5 +1,6 @@
 import { Check, Clock, Flag, Repeat, Timer } from 'lucide-react'
 import type { Task } from '../types'
+import { SwipeableTask } from './SwipeableTask'
 import {
   addDaysKey,
   humanDate,
@@ -17,6 +18,7 @@ interface Props {
   onTagClick?: (tag: string) => void
   onFocus?: (task: Task) => void
   onQuickSchedule?: (task: Task, date: string) => void
+  onDelete?: (task: Task) => void
   quickSchedule?: boolean
   overdue?: boolean
   showDate?: boolean
@@ -30,6 +32,7 @@ export function TaskItem({
   onTagClick,
   onFocus,
   onQuickSchedule,
+  onDelete,
   quickSchedule,
   overdue,
   showDate,
@@ -54,7 +57,7 @@ export function TaskItem({
   )
   const canFocus = Boolean((task.time || task.duration) && !task.completed && onFocus)
 
-  return (
+  const card = (
     <article
       className={cx(
         'task-card',
@@ -233,5 +236,16 @@ export function TaskItem({
         </button>
       )}
     </article>
+  )
+
+  if (!onDelete) return card
+
+  return (
+    <SwipeableTask
+      onComplete={() => onToggle(task)}
+      onDelete={() => onDelete(task)}
+    >
+      {card}
+    </SwipeableTask>
   )
 }

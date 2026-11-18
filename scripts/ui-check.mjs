@@ -43,7 +43,7 @@ const shot = async (name) => {
 }
 
 async function openNewTask() {
-  await page.locator('.fab').click()
+  await page.locator('.tab-create').click()
   await page.locator('.sheet').waitFor({ state: 'visible' })
 }
 
@@ -174,7 +174,8 @@ try {
   await saveSheet()
 
   // Calendar
-  await page.locator('.tab', { hasText: '日历' }).click()
+  await page.locator('.hero-calendar').click()
+  await page.locator('.calendar-view').waitFor()
   await page.locator('.week-strip').waitFor({ state: 'visible' })
   const selectedDayText = await page.locator('.day-panel').innerText()
   if (!selectedDayText.includes('和张三开会')) {
@@ -187,6 +188,27 @@ try {
     throw new Error('Tomorrow task missing from calendar day panel')
   }
   await shot('04-calendar')
+
+  await page.locator('.tab-create').click()
+  const calendarSheetDate = await page.locator('.date-chip input').inputValue()
+  if (calendarSheetDate !== dates.tomorrow) {
+    throw new Error(
+      `Calendar create center button used ${calendarSheetDate}, expected ${dates.tomorrow}`,
+    )
+  }
+  await page.locator('.sheet-close').click()
+  await page.locator('.sheet').waitFor({ state: 'hidden' })
+
+  await page.locator('.day-view-btn', { hasText: '时间轴' }).click()
+  await page.locator('.timeline-task', { hasText: '买菜' }).waitFor()
+  const timelineHour = page.locator('.timeline-hour').filter({ hasText: '10:00' })
+  if ((await timelineHour.count()) === 0) {
+    throw new Error('Calendar timeline is missing the 10:00 hour row')
+  }
+  await shot('04-calendar-timeline')
+  await page.locator('.day-view-btn', { hasText: '列表' }).click()
+  await page.locator('.day-panel .task-card', { hasText: '买菜' }).waitFor()
+  log('Calendar timeline shows timed tasks by hour')
   log('Calendar shows today + tomorrow tasks')
 
   // Complete today's task
@@ -225,7 +247,8 @@ try {
   await nextToast.waitFor({ state: 'visible', timeout: 8000 })
   const toastText = await nextToast.innerText()
   log('Recurring task spawned next occurrence: ' + toastText)
-  await page.locator('.tab', { hasText: '日历' }).click()
+  await page.locator('.hero-calendar').click()
+  await page.locator('.calendar-view').waitFor()
   await page.locator(`.day-cell[data-date="${dates.tomorrow}"]`).click()
   await page.waitForTimeout(150)
   const recurPanel = await page.locator('.day-panel').innerText()

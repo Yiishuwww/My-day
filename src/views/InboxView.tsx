@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react'
 import { ChevronDown, Inbox } from 'lucide-react'
 import type { Task } from '../types'
 import { TaskItem } from '../components/TaskItem'
+import { SortableTaskList } from '../components/SortableTaskList'
 import { EmptyState } from '../components/EmptyState'
-import { sortTasks } from '../lib/dates'
+import { sortByPriorityAndOrder } from '../lib/dates'
+import { reorderTasks } from '../db'
 import { cx } from '../lib/utils'
 
 interface Props {
@@ -14,6 +16,7 @@ interface Props {
   onFocus: (task: Task) => void
   onTagClick: (tag: string) => void
   onQuickSchedule: (task: Task, date: string) => void
+  onDelete: (task: Task) => void
   onNew: () => void
 }
 
@@ -25,12 +28,16 @@ export function InboxView({
   onFocus,
   onTagClick,
   onQuickSchedule,
+  onDelete,
   onNew,
 }: Props) {
   const [showDone, setShowDone] = useState(false)
 
   const pending = useMemo(
-    () => sortTasks(tasks.filter((task) => !task.date && !task.completed)),
+    () =>
+      sortByPriorityAndOrder(
+        tasks.filter((task) => !task.date && !task.completed),
+      ),
     [tasks],
   )
   const completed = useMemo(
@@ -47,7 +54,6 @@ export function InboxView({
         <div>
           <p className="eyebrow">收集</p>
           <h1>收件箱</h1>
-          <p className="page-sub">先记下来，稍后再安排时间。</p>
         </div>
       </header>
 
@@ -60,26 +66,26 @@ export function InboxView({
         </div>
 
         {pending.length > 0 ? (
-          <div className="task-list">
-            {pending.map((task) => (
-              <TaskItem
-                key={task.id}
-                task={task}
-                onToggle={onToggle}
-                onToggleSubtask={onToggleSubtask}
-                onOpen={onEdit}
-                onFocus={onFocus}
-                onTagClick={onTagClick}
-                onQuickSchedule={onQuickSchedule}
-                quickSchedule
-              />
-            ))}
-          </div>
+          <SortableTaskList
+            tasks={pending}
+            onReorder={(orderedIds) => {
+              void reorderTasks(orderedIds).catch(() => undefined)
+            }}
+            itemProps={{
+              onToggle,
+              onToggleSubtask,
+              onOpen: onEdit,
+              onFocus,
+              onTagClick,
+              onQuickSchedule,
+              onDelete,
+              quickSchedule: true,
+            }}
+          />
         ) : (
           <EmptyState
             icon={<Inbox size={22} />}
             title="收件箱是空的"
-            text="想到什么先记在这里，之后再点开任务安排日期。"
             actionLabel="记一件事"
             onAction={onNew}
           />
@@ -108,6 +114,7 @@ export function InboxView({
                     onFocus={onFocus}
                     onTagClick={onTagClick}
                     onQuickSchedule={onQuickSchedule}
+                    onDelete={onDelete}
                     quickSchedule
                   />
                 ))}

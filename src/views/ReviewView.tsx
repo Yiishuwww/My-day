@@ -6,7 +6,6 @@ import {
   Flame,
   Pencil,
   Plus,
-  Timer,
   Trash2,
 } from 'lucide-react'
 import type { Habit, Task } from '../types'
@@ -20,7 +19,15 @@ import {
   isHabitChecked,
   isHabitDue,
 } from '../lib/habits'
-import { startOfWeekKey, todayKey } from '../lib/dates'
+import {
+  addDaysKey,
+  daysBetweenKeys,
+  humanDate,
+  startOfWeekKey,
+  todayKey,
+  toKey,
+  weekKeys,
+} from '../lib/dates'
 import {
   completedTaskCountsByDate,
   focusMinutesByDate,
@@ -42,6 +49,8 @@ const METRICS: Array<{ value: HeatmapMetric; label: string }> = [
   { value: 'focus', label: '专注' },
   { value: 'habits', label: '习惯' },
 ]
+
+const BAR_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
 export function ReviewView({
   tasks,
@@ -67,12 +76,43 @@ export function ReviewView({
   )
   const habitCounts = useMemo(() => habitCheckinsByDate(habits), [habits])
 
-  const dueToday = habits.filter((habit) => isHabitDue(habit, today))
-  const doneToday = dueToday.filter((habit) =>
-    isHabitChecked(habit, today),
-  ).length
-  const completedToday = taskCounts.get(today) ?? 0
+  const weekDates = weekKeys(weekStart)
+  const completedThisWeek = sumMapInRange(taskCounts, weekStart, today)
   const focusThisWeek = sumMapInRange(focusCounts, weekStart, today)
+  const lastWeekStart = addDaysKey(weekStart, -7)
+  const completedLastWeek = sumMapInRange(
+    taskCounts,
+    lastWeekStart,
+    addDaysKey(lastWeekStart, daysBetweenKeys(weekStart, today)),
+  )
+  let habitDueCount = 0
+  let habitDoneCount = 0
+  for (const habit of habits) {
+    const created = toKey(new Date(habit.createdAt))
+    for (const date of weekDates) {
+      if (date > today) break
+      if (date < created || !isHabitDue(habit, date)) continue
+      habitDueCount += 1
+      if (isHabitChecked(habit, date)) habitDoneCount += 1
+    }
+  }
+  const habitRate =
+    habitDueCount > 0
+      ? Math.round((habitDoneCount / habitDueCount) * 100)
+      : null
+  const trend = completedThisWeek - completedLastWeek
+  const trendText =
+    completedThisWeek === 0 && completedLastWeek === 0
+      ? ''
+      : trend > 0
+        ? `比上周多 ${trend} 件`
+        : trend < 0
+          ? `比上周少 ${-trend} 件`
+          : '与上周持平'
+  const maxBar = Math.max(
+    1,
+    ...weekDates.map((date) => taskCounts.get(date) ?? 0),
+  )
   const metricValues =
     metric === 'tasks'
       ? taskCounts
@@ -113,29 +153,72 @@ export function ReviewView({
         </div>
       </header>
 
-      <section className="review-stats">
-        <div className="review-stat">
-          <span className="review-stat-icon">
-            <CircleCheck size={17} />
-          </span>
-          <strong>{completedToday}</strong>
-          <span>今日完成</span>
+      <section className="weekly-card">
+        <div className="weekly-head">
+          <div>
+            <h2>本周回顾</h2>
+            <p className="weekly-range">
+              {humanDate(weekStart)} – {humanDate(addDaysKey(weekStart, 6))}
+            </p>
+          </div>
+          {trendText && (
+            <span
+              className={cx(
+                'weekly-trend',
+                trend > 0 && 'up',
+                trend < 0 && 'down',
+              )}
+            >
+              {trendText}
+            </span>
+          )}
         </div>
-        <div className="review-stat">
-          <span className="review-stat-icon">
-            <Timer size={17} />
-          </span>
-          <strong>{focusThisWeek}</strong>
-          <span>本周专注分钟</span>
+
+        <div className="weekly-metrics">
+          <div className="weekly-metric">
+            <strong>{completedThisWeek}</strong>
+            <span>完成任务</span>
+          </div>
+          <div className="weekly-metric">
+            <strong>{focusThisWeek}</strong>
+            <span>专注分钟</span>
+          </div>
+          <div className="weekly-metric">
+            <strong>{habitRate === null ? '—' : `${habitRate}%`}</strong>
+            <span>习惯完成</span>
+          </div>
         </div>
-        <div className="review-stat">
-          <span className="review-stat-icon">
-            <Flame size={17} />
-          </span>
-          <strong>
-            {doneToday}/{dueToday.length}
-          </strong>
-          <span>今日习惯</span>
+
+        <div className="weekly-bars" aria-label="本周每日完成任务数">
+          {weekDates.map((date, index) => {
+            const value = taskCounts.get(date) ?? 0
+            const future = date > today
+            return (
+              <div
+                key={date}
+                className={cx(
+                  'weekly-bar-col',
+                  date === today && 'is-today',
+                  future && 'is-future',
+                )}
+                title={`${humanDate(date)} · ${value} 个任务`}
+              >
+                <span className="weekly-bar-track">
+                  {value > 0 && (
+                    <span
+                      className="weekly-bar-fill"
+                      style={{
+                        height: `${Math.max(12, (value / maxBar) * 100)}%`,
+                      }}
+                    />
+                  )}
+                </span>
+                <span className="weekly-bar-label">
+                  {BAR_LABELS[index]}
+                </span>
+              </div>
+            )
+          })}
         </div>
       </section>
 
@@ -159,7 +242,6 @@ export function ReviewView({
           </div>
         </div>
         <Heatmap values={metricValues} metric={metric} />
-        <p className="review-note">最近 26 周 · 左右滑动查看更早记录</p>
       </section>
 
       <section className="review-card">
@@ -250,7 +332,6 @@ export function ReviewView({
           <EmptyState
             icon={<Flame size={22} />}
             title="还没有习惯"
-            text="先从一个每天都能做到的小习惯开始。"
             actionLabel="添加习惯"
             onAction={() => setHabitSheet({})}
           />

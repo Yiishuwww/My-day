@@ -4,7 +4,7 @@ import { cx } from '../lib/utils'
 interface Props {
   icon: ReactNode
   title: string
-  text: string
+  text?: string
   actionLabel?: string
   onAction?: () => void
   compact?: boolean
@@ -22,7 +22,7 @@ export function EmptyState({
     <div className={cx('empty', compact && 'compact')}>
       <div className="empty-icon">{icon}</div>
       <h3>{title}</h3>
-      <p>{text}</p>
+      {text && <p>{text}</p>}
       {actionLabel && onAction && (
         <button type="button" className="empty-action" onClick={onAction}>
           {actionLabel}
